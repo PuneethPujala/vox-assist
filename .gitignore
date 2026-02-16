@@ -1,0 +1,33 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# ML models and datasets
+*.csv
+*.pkl
+*.h5
+*.pt
+
+# Environment
+.env
+
+# Node
+node_modules/
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+output.json
+backend/service-account-key.json
+backend/engine/ResPlan_extracted.csv
+backend/engine/ResPlan_Extracted/
+*.png
+backend/engine/*.csv
+backend/engine/*.pkl
+*.exe
+ffmpeg.exe
+

@@ -1,0 +1,38 @@
+{
+    "living": {
+        "mean_aspect_ratio": 31831058188933.85,
+        "mean_area": 8134.97683879201,
+        "min_area": 0.0,
+        "max_area": 32438.186049129345
+    },
+    "bedroom": {
+        "mean_aspect_ratio": 1.2307191131313882,
+        "mean_area": 6074.546500971183,
+        "min_area": 7.044573206936745,
+        "max_area": 24464.727998145536
+    },
+    "kitchen": {
+        "mean_aspect_ratio": 1.3510893361265113,
+        "mean_area": 3666.396070993042,
+        "min_area": 0.009766627407827019,
+        "max_area": 15818.460130212556
+    },
+    "bathroom": {
+        "mean_aspect_ratio": 1.6063507663347731,
+        "mean_area": 1487.122775751396,
+        "min_area": 5.939662194539162,
+        "max_area": 15202.863450504137
+    },
+    "balcony": {
+        "mean_aspect_ratio": 2.753815144944135,
+        "mean_area": 1975.5793542386045,
+        "min_area": 1.0658141036401503e-14,
+        "max_area": 45827.73164327749
+    },
+    "storage": {
+        "mean_aspect_ratio": 1.4759223151043275,
+        "mean_area": 1178.141497430313,
+        "min_area": 140.556008271739,
+        "max_area": 5716.233884302577
+    }
+}
