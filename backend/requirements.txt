@@ -13,3 +13,4 @@ shapely
 networkx
 matplotlib
 opencv-python
+gunicorn
