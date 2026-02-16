@@ -26,9 +26,11 @@ class DesignBase(BaseModel):
     model_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
-    class Config:
-        populate_by_name = True
-        json_encoders = {ObjectId: str}
+    model_config = {
+        "populate_by_name": True,
+        "json_encoders": {ObjectId: str},
+        "protected_namespaces": ()
+    }
 
 class DesignCreate(BaseModel):
     prompt: str
