@@ -17,3 +17,4 @@ networkx==3.2.1
 shapely==2.0.2
 opencv-python-headless==4.8.1.78
 email-validator
+open3d
