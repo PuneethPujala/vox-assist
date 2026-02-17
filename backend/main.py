@@ -32,8 +32,9 @@ app.include_router(api_router, prefix="/api/v1")
 app.include_router(user_router, prefix="/api/v1")
 
 # Mount static files
-os.makedirs("backend/static", exist_ok=True)
-app.mount("/assets", StaticFiles(directory="backend/static/assets"), name="assets")
+# Mount static files (for 3D models, etc.)
+os.makedirs("backend/static/models", exist_ok=True)
+app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
 @app.on_event("startup")
 async def startup_db_client():
@@ -43,14 +44,9 @@ async def startup_db_client():
 async def shutdown_db_client():
     await close_mongo_connection()
 
-from fastapi.responses import FileResponse
-
-@app.get("/{full_path:path}")
-async def serve_react_app(full_path: str):
-    # API routes are already handled by the routers above.
-    # If the path is not an API route (checked by order of inclusion)
-    # serve the index.html
-    return FileResponse("backend/static/index.html")
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to VOX-ASSIST API"}
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
