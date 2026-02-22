@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Trash2, Edit2, Copy, MoreVertical, X, Check } from 'lucide-react';
+import { Loader2, Trash2, Edit2, Copy, MoreVertical, X, Check, LayoutTemplate } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast, Toaster } from 'react-hot-toast'; // Will install react-hot-toast later
 import { Skeleton } from '../components/ui/skeleton';
@@ -142,7 +142,7 @@ const YourDesigns = () => {
                                 <div className="flex gap-1">
                                     {design.spec_data.rooms.slice(0, 3).map((r, i) => (
                                         <div key={i} className="w-8 h-8 bg-stone-200 border border-stone-300 rounded-sm"
-                                            style={{ width: r.size[0] * 2, height: r.size[1] * 2 }}></div>
+                                            style={{ width: (r.size?.[0] || 12) * 2, height: (r.size?.[1] || 12) * 2 }}></div>
                                     ))}
                                 </div>
                             )}
