@@ -279,7 +279,8 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
          if not poly or poly.is_empty: return poly
          new_coords = []
          for x, y in poly.exterior.coords:
-             new_coords.append((round(x, 4), round(y, 4)))
+             # Strongly snap to 0.1m grid (10cm) to enforce squareness
+             new_coords.append((round(x * 10) / 10.0, round(y * 10) / 10.0))
          return Polygon(new_coords)
 
     rooms = {k: _snap_coords(v) for k, v in rooms.items()}

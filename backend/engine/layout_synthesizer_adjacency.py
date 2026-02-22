@@ -376,13 +376,18 @@ def synthesize_single_floor(spec, config=None):
 
         if poly:
             layouts[room_name] = poly
-            bedroom_names.append(room_name)
+            if r_type == "bedroom":
+                bedroom_names.append(room_name)
             print(f"  🛏️  PRIVATE: {room_name} (branch from core/public)")
         else:
             print(f"  ❌ FAILED to place {room_name} (No valid public adjacency)")
     
     # PHASE 4: SERVICES (Bathrooms, Storage, Utility)
     services = rooms_by_zone["service"]
+    study_names = [name for name in layouts.keys() if name.startswith("study")]
+    
+    bathroom_idx = 0
+    
     for idx, room in enumerate(services):
         r_type = room["type"]
         area = float(room["area"])
@@ -394,14 +399,23 @@ def synthesize_single_floor(spec, config=None):
         
         poly = None
         
-        # Strategy 1: Ensuite Bathroom (attach to corresponding bedroom)
-        if r_type == "bathroom" and idx < len(bedroom_names):
-            target_bedroom = bedroom_names[idx]
-            # Use compactness bias even for ensuites
-            preferred_sides = _get_compact_sides(layouts)
-            poly = _place_adjacent(layouts[target_bedroom], width, height, layouts.values(), preferred_sides)
-            if poly:
-                print(f"  test SERVICE: {room_name} (ensuite to {target_bedroom})")
+        # Strategy 1: Ensuite Bathroom (attach to corresponding bedroom, or study if bedrooms are full)
+        if r_type == "bathroom":
+            target_room = None
+            if bathroom_idx < len(bedroom_names):
+                target_room = bedroom_names[bathroom_idx]
+                bathroom_idx += 1
+            elif study_names: # Fallback to study if we have more bathrooms than bedrooms
+                target_room = study_names[0] # Try to attach to first study
+                study_names.pop(0) # Consume it so multiple baths don't crowd it
+                bathroom_idx += 1
+                
+            if target_room:
+                 # Use compactness bias even for ensuites
+                 preferred_sides = _get_compact_sides(layouts)
+                 poly = _place_adjacent(layouts[target_room], width, height, layouts.values(), preferred_sides)
+                 if poly:
+                     print(f"  🚿 SERVICE: {room_name} (ensuite to {target_room})")
 
         # Strategy 2: Common Bath / Storage / Utility
         # Attach to Hall/Living or Kitchen or Corridor
@@ -415,6 +429,7 @@ def synthesize_single_floor(spec, config=None):
             # Common Bath prefers Living/Hall
             if r_type == "bathroom":
                 preferred_targets.extend([n for n in layouts if "living" in n])
+                preferred_targets.extend([n for n in layouts if "study" in n]) # Fallback to any study
                 
             # Fallback for all: Living/Hall
             preferred_targets.extend([n for n in layouts if "living" in n])
@@ -425,7 +440,7 @@ def synthesize_single_floor(spec, config=None):
                 if target in layouts:
                     poly = _place_adjacent(layouts[target], width, height, layouts.values(), compact_sides)
                     if poly:
-                        print(f"  test SERVICE: {room_name} (attached to {target})")
+                        print(f"  🔧 SERVICE: {room_name} (attached to {target})")
                         break
         
         # Strategy 3: Desperation (Attach to anything anywhere)
@@ -436,7 +451,7 @@ def synthesize_single_floor(spec, config=None):
              for target in all_rooms:
                  poly = _place_adjacent(layouts[target], width, height, layouts.values(), compact_sides)
                  if poly:
-                     print(f"  test SERVICE: {room_name} (fallback attached to {target})")
+                     print(f"  🔧 SERVICE: {room_name} (fallback attached to {target})")
                      break
 
         if poly:

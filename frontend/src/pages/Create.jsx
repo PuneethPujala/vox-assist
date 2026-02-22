@@ -57,13 +57,11 @@ const Model = ({ url }) => {
 
     return (
         <group>
-            <mesh geometry={geometry} castShadow receiveShadow>
+            <mesh geometry={geometry}>
                 <meshStandardMaterial
                     vertexColors={true}
                     side={THREE.DoubleSide}
-                    flatShading={false}
-                    roughness={0.5}
-                    metalness={0.1}
+                    roughness={0.8}
                 />
             </mesh>
         </group>
@@ -261,7 +259,8 @@ const Create = () => {
                                     <div className="h-20 bg-stone-100">
                                         {/* Mini Canvas */}
                                         <Canvas camera={{ position: [0, 50, 0], fov: 50 }}>
-                                            <ambientLight intensity={0.8} />
+                                            <ambientLight intensity={0.5} />
+                                            <directionalLight position={[10, 20, 10]} intensity={1.5} />
                                             <Suspense fallback={null}>
                                                 <Model url={`${import.meta.env.VITE_API_URL}${c.model_url}`} />
                                             </Suspense>
@@ -397,12 +396,10 @@ const Create = () => {
 
             {/* Right Panel: 3D Visualization */}
             <div className="w-full md:w-2/3 h-[50vh] md:h-full bg-stone-100 relative">
-                <Canvas shadows camera={{ position: [20, 30, 20], fov: 45, far: 10000 }}>
+                <Canvas camera={{ position: [20, 30, 20], fov: 45, far: 10000 }}>
                     <fog attach="fog" args={['#f5f5f4', 50, 10000]} />
-                    <ambientLight intensity={0.6} />
-                    <hemisphereLight intensity={0.4} groundColor="#f5f5f4" />
-                    <directionalLight position={[20, 40, 10]} intensity={1.5} castShadow shadow-mapSize={2048} shadow-bias={-0.0001} />
-
+                    <ambientLight intensity={0.5} />
+                    <directionalLight position={[10, 20, 10]} intensity={1.5} />
                     <Suspense fallback={null}>
                         <Center>
                             {modelUrl && <Model url={modelUrl} />}
@@ -418,11 +415,13 @@ const Create = () => {
                             ))}
 
                             {/* Highlight Layer */}
+                            {/* Highlight Layer */}
                             {hoveredPoly && <RoomHighlight roomPoly={hoveredPoly} color={hoveredColor} />}
+
+                            {/* 1-Meter Grid for Scale inside Center so it aligns with base */}
+                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={1} sectionThickness={1.5} cellThickness={0} sectionColor="#e5e7eb" fadeDistance={30} />
                         </Center>
-                        {/* Reduced Grid Size & Faded per user request */}
-                        <Grid position={[0, -0.01, 0]} args={[50, 50]} sectionSize={5} sectionThickness={1} cellThickness={0.5} cellColor="#e5e7eb" sectionColor="#d6d3d1" fadeDistance={30} />
-                    </Suspense>
+                        {/* ContactShadows removed per user request */}                    </Suspense>
 
                     <OrbitControls makeDefault />
                 </Canvas>
@@ -433,6 +432,20 @@ const Create = () => {
                         <div className="flex flex-col items-center">
                             <span className="text-[10px] font-bold text-red-500">N</span>
                             <div className="w-0.5 h-4 bg-stone-800 rounded-full"></div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Scale Legend UI */}
+                <div className="absolute bottom-6 right-6 pointer-events-none">
+                    <div className="bg-white/90 backdrop-blur px-3 py-2 rounded-lg shadow-sm border border-stone-200 flex items-center gap-3">
+                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Scale</span>
+                        <div className="flex flex-col items-center gap-1">
+                            <div className="w-12 border-b-2 border-stone-800 relative">
+                                <div className="absolute top-[-3px] left-0 w-0.5 h-1.5 bg-stone-800"></div>
+                                <div className="absolute top-[-3px] right-0 w-0.5 h-1.5 bg-stone-800"></div>
+                            </div>
+                            <span className="text-[10px] font-medium text-stone-600">1 Grid = 1m</span>
                         </div>
                     </div>
                 </div>

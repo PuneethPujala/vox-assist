@@ -78,6 +78,7 @@ ADJACENCY_RULES = {
         "prefer": {
             # Bathrooms are TERMINAL NODES (leaves)
             "bedroom": 5,      # Attached bathroom (primary)
+            "study": 4,        # Attached to study (acts like ensuite)
             "living": 3,       # Common bathroom (secondary)
         },
         "avoid": {
@@ -180,10 +181,10 @@ ADJACENCY_RULES = {
             # Study room in quiet zone
             "living": 3,
             "bedroom": 2,
+            "bathroom": 4,
         },
         "avoid": {
             "kitchen": True,
-            "bathroom": True,
         }
     },
     
