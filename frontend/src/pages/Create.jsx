@@ -1,25 +1,23 @@
-import React, { useState, Suspense, useRef, useEffect } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Stage, Center, Grid } from '@react-three/drei';
+import { OrbitControls, Center, Grid, Html } from '@react-three/drei';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
-import { Loader2, Send, Download } from 'lucide-react';
+import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const Model = ({ url }) => {
     const geometry = useLoader(PLYLoader, url);
-    const { camera, controls } = useThree(); // Access camera & controls
+    const { camera, controls } = useThree();
 
-    // Auto-frame the camera when model loads
     useEffect(() => {
         if (geometry) {
             geometry.computeVertexNormals();
             geometry.computeBoundingBox();
 
-            // 1. Calculate Bounding Box & Center
             const box = geometry.boundingBox;
             const center = new THREE.Vector3();
             box.getCenter(center);
@@ -28,41 +26,24 @@ const Model = ({ url }) => {
             box.getSize(size);
 
             const maxDim = Math.max(size.x, size.y, size.z);
-
-            // 2. Position Camera (Fit to View)
-            // Distance required to fit object within FOV
             const fov = camera.fov * (Math.PI / 180);
-            let cameraDist = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-            cameraDist *= 2.0; // Add some padding (2x distance)
+            let cameraDist = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 2.0;
 
-            // Move camera to an isometric-like angle relative to center
-            const newPos = new THREE.Vector3(
-                center.x + cameraDist,
-                center.y + cameraDist,
-                center.z + cameraDist
-            );
-
+            const newPos = new THREE.Vector3(center.x + cameraDist, center.y + cameraDist, center.z + cameraDist);
             camera.position.copy(newPos);
             camera.lookAt(center);
 
-            // 3. Update Controls Target
             if (controls) {
                 controls.target.copy(center);
                 controls.update();
             }
-
-            console.log("Auto-framed camera to:", newPos);
         }
     }, [geometry, url, camera, controls]);
 
     return (
         <group>
             <mesh geometry={geometry}>
-                <meshStandardMaterial
-                    vertexColors={true}
-                    side={THREE.DoubleSide}
-                    roughness={0.8}
-                />
+                <meshStandardMaterial vertexColors={true} side={THREE.DoubleSide} roughness={0.8} />
             </mesh>
         </group>
     );
@@ -70,98 +51,207 @@ const Model = ({ url }) => {
 
 const RoomHighlight = ({ roomPoly, color }) => {
     if (!roomPoly) return null;
-
     const shape = new THREE.Shape();
     let coords = roomPoly.coordinates;
-
-    // Robust parsing for Ring vs Multi-Ring
-    if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
-        coords = coords[0];
-    }
+    if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) coords = coords[0];
 
     if (coords && coords.length > 0) {
         shape.moveTo(coords[0][0], coords[0][1]);
-        for (let i = 1; i < coords.length; i++) {
-            shape.lineTo(coords[i][0], coords[i][1]);
-        }
+        for (let i = 1; i < coords.length; i++) shape.lineTo(coords[i][0], coords[i][1]);
     }
-
-    // Taller extrusion, lifted up
-    const extrudeSettings = { depth: 2.8, bevelEnabled: false };
 
     return (
         <mesh position={[0, 0, 0.1]}>
-            <extrudeGeometry args={[shape, extrudeSettings]} />
-            <meshBasicMaterial
-                color={color || "#ff00ff"}
-                transparent
-                opacity={0.6}
-                side={THREE.DoubleSide}
-                depthTest={false} /* Force it to show on top of everything */
-            />
+            <extrudeGeometry args={[shape, { depth: 2.8, bevelEnabled: false }]} />
+            <meshBasicMaterial color={color || "#ff00ff"} transparent opacity={0.6} side={THREE.DoubleSide} depthTest={false} />
         </mesh>
     );
 };
 
-const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId }) => {
+const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSpec, unit, computeRoomDimensions }) => {
+    const [hoverPoint, setHoverPoint] = useState(null);
     if (!roomPoly) return null;
-
     const shape = new THREE.Shape();
     let coords = roomPoly.coordinates;
+    if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) coords = coords[0];
 
-    // Handle standard GeoJSON (Array of Rings) vs Flattened (Array of Points)
-    // Standard: [[x,y], [x,y]...] -> coords[0] is the ring
-    // Flattened: [[x,y], [x,y]...] -> coords is the ring
-    // Wait, if flattened, coords is [pt, pt]. pt is [x,y].
-    // If standard, coords is [ring, hole]. ring is [pt, pt].
-
-    // Check depth:
-    // If coords[0][0] is a number, it's a Ring (Flattened Polygon structure).
-    // If coords[0][0] is an array, it's a List of Rings (Standard Polygon).
-
-    if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
-        coords = coords[0]; // Extract exterior ring
-    }
-
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     if (coords && coords.length > 0) {
         shape.moveTo(coords[0][0], coords[0][1]);
         for (let i = 1; i < coords.length; i++) {
             shape.lineTo(coords[i][0], coords[i][1]);
+            const [px, py] = coords[i];
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
         }
     }
 
-    const extrudeSettings = { depth: 2.8, bevelEnabled: false }; // Match wall height
+    const cx = minX !== Infinity ? (minX + maxX) / 2 : 0;
+    const cy = minY !== Infinity ? (minY + maxY) / 2 : 0;
+    const dims = computeRoomDimensions ? computeRoomDimensions(roomId) : null;
 
     return (
         <mesh
             position={[0, 0, 0]}
             onPointerOver={(e) => { e.stopPropagation(); setHoveredRoomId(roomId); }}
-            onPointerOut={() => setHoveredRoomId(null)}
+            onPointerOut={() => { setHoveredRoomId(null); setHoverPoint(null); }}
+            onPointerMove={(e) => { e.stopPropagation(); setHoverPoint(e.point); }}
         >
-            <extrudeGeometry args={[shape, extrudeSettings]} />
-            <meshBasicMaterial transparent opacity={0.0} />
+            <extrudeGeometry args={[shape, { depth: 2.8, bevelEnabled: false }]} />
+            <meshBasicMaterial transparent opacity={0.0} depthTest={false} />
+            {isHovered && roomSpec && dims && (
+                <Html position={hoverPoint ? [hoverPoint.x, hoverPoint.y, 3] : [cx, cy, 3]} center style={{ pointerEvents: 'none', zIndex: 100 }}>
+                    <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-xl border border-stone-200 text-xs text-stone-700 font-mono w-max -translate-y-16">
+                        <p className="font-bold text-charcoal mb-1 flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: roomSpec.color || '#e5e7eb' }}></span>
+                            <span className="capitalize">{roomSpec.type}</span>
+                        </p>
+                        <p>{Math.round(roomSpec.area)} sq{unit} <span className="text-stone-400">({unit === 'ft' ? Math.round(roomSpec.area / 10.7639) + ' sqm' : Math.round(roomSpec.area * 10.7639) + ' sqft'})</span></p>
+                        <p className="text-[10px] text-stone-500 mt-1 border-t border-stone-100 pt-1">
+                            {unit === 'ft' ? `${dims.ft.w} × ${dims.ft.h} ft (${dims.m.w} × ${dims.m.h} m)` : `${dims.m.w} × ${dims.m.h} m (${dims.ft.w} × ${dims.ft.h} ft)`}
+                        </p>
+                    </div>
+                </Html>
+            )}
         </mesh>
     );
 };
 
 const Create = () => {
     const { currentUser } = useAuth();
-    const [prompt, setPrompt] = useState("");
+
+    // Wizard State
+    const [step, setStep] = useState(1); // 1: Rooms, 2: Style, 3: Review, 4: Generating, 5: Results
+    const [rooms, setRooms] = useState([
+        { id: 1, type: 'living', area: 300 },
+        { id: 2, type: 'bedroom', area: 150 },
+        { id: 3, type: 'bathroom', area: 50 },
+        { id: 4, type: 'kitchen', area: 120 }
+    ]);
+    const [inputMode, setInputMode] = useState('manual'); // 'manual' or 'text'
+    const [unit, setUnit] = useState('ft'); // 'ft' or 'm'
+    const [gridSize, setGridSize] = useState(3.0);
+    const [textPrompt, setTextPrompt] = useState('');
+    const [totalAreaConstraint, setTotalAreaConstraint] = useState(1000);
+    const [validationError, setValidationError] = useState('');
+
+    // Generation State
     const [loading, setLoading] = useState(false);
+    const [generationStatus, setGenerationStatus] = useState(''); // Simulated SSE
     const [modelUrl, setModelUrl] = useState(null);
     const [layoutSpec, setLayoutSpec] = useState(null);
-    const [layoutData, setLayoutData] = useState(null); // Full layout (polygons)
+    const [layoutData, setLayoutData] = useState(null);
     const [score, setScore] = useState(0);
     const [stats, setStats] = useState(null);
     const [error, setError] = useState(null);
-    const [hoveredRoomId, setHoveredRoomId] = useState(null); // ID for 3D highlight
-
+    const [hoveredRoomId, setHoveredRoomId] = useState(null);
     const [candidates, setCandidates] = useState([]);
     const [selectedCandidateId, setSelectedCandidateId] = useState(null);
 
-    const handleGenerate = async () => {
-        if (!prompt.trim()) return;
+    // Derived compiled prompt
+    const compiledPrompt = inputMode === 'text'
+        ? textPrompt
+        : `A house with a total area of around ${totalAreaConstraint} sq${unit}. It includes: ` +
+        rooms.map(r => `a ${r.area} sq${unit} ${r.type} room`).join(', ') + '.';
 
+    // Area Distribution Graph Data
+    const totalRoomArea = rooms.reduce((acc, r) => acc + parseInt(r.area || 0), 0);
+    const unusedArea = Math.max(0, totalAreaConstraint - totalRoomArea);
+    const pieData = rooms.map((r, i) => ({
+        name: r.type,
+        value: parseInt(r.area || 0),
+        color: ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444'][i % 6]
+    }));
+    if (unusedArea > 0) pieData.push({ name: 'Unallocated', value: unusedArea, color: '#f5f5f4' });
+
+    const handleAddRoom = () => {
+        setRooms([...rooms, { id: Date.now(), type: 'bedroom', area: 100 }]);
+    };
+
+    const handleRoomChange = (id, field, value) => {
+        setRooms(rooms.map(r => r.id === id ? { ...r, [field]: value } : r));
+    };
+
+    const handleRemoveRoom = (id) => {
+        setRooms(rooms.filter(r => r.id !== id));
+    };
+
+    const computeRoomDimensions = (roomId) => {
+        const poly = layoutData?.[roomId];
+        if (!poly) return null;
+        let coords = poly.coordinates;
+        if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) coords = coords[0];
+        if (!coords || coords.length === 0) return null;
+
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (let p of coords) {
+            if (p[0] < minX) minX = p[0];
+            if (p[0] > maxX) maxX = p[0];
+            if (p[1] < minY) minY = p[1];
+            if (p[1] > maxY) maxY = p[1];
+        }
+
+        let rawW = Math.abs(maxX - minX);
+        let rawH = Math.abs(maxY - minY);
+
+        return {
+            m: { w: rawW.toFixed(1), h: rawH.toFixed(1) },
+            ft: { w: (rawW * 3.28084).toFixed(1), h: (rawH * 3.28084).toFixed(1) }
+        };
+    };
+
+    const CustomTooltip = ({ active, payload }) => {
+        if (active && payload && payload.length) {
+            const data = payload[0].payload;
+            const dims = data.id ? computeRoomDimensions(data.id) : null;
+            return (
+                <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-xl border border-stone-200 text-xs text-stone-700 font-mono z-50 pointer-events-none">
+                    <p className="font-bold text-charcoal mb-1 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: data.color || '#e5e7eb' }}></span>
+                        <span className="capitalize">{data.type || data.name}</span>
+                    </p>
+                    <p>{Math.round(data.area || data.value)} sq{unit} <span className="text-stone-400">({unit === 'ft' ? Math.round((data.area || data.value) / 10.7639) + ' sqm' : Math.round((data.area || data.value) * 10.7639) + ' sqft'})</span></p>
+                    {dims && (
+                        <p className="text-[10px] text-stone-500 mt-1 border-t border-stone-100 pt-1">
+                            {unit === 'ft' ? `${dims.ft.w} × ${dims.ft.h} ft (${dims.m.w} × ${dims.m.h} m)` : `${dims.m.w} × ${dims.m.h} m (${dims.ft.w} × ${dims.ft.h} ft)`}
+                        </p>
+                    )}
+                </div>
+            );
+        }
+        return null;
+    };
+
+    const validateStep1 = () => {
+        if (inputMode === 'text') {
+            if (textPrompt.trim().length < 10) {
+                setValidationError('Please provide a more detailed text description of your desired rooms.');
+                return false;
+            }
+        } else {
+            const totalRoomArea = rooms.reduce((acc, r) => acc + parseInt(r.area || 0), 0);
+            if (totalRoomArea > totalAreaConstraint * 1.1) {
+                setValidationError(`Conflict: Total room area (${totalRoomArea} sq${unit}) significantly exceeds the total house boundary (${totalAreaConstraint} sq${unit}).`);
+                return false;
+            }
+        }
+        setValidationError('');
+        return true;
+    };
+
+    const nextStep = () => {
+        if (step === 1 && !validateStep1()) return;
+        setStep(s => s + 1);
+    };
+
+    const prevStep = () => {
+        setStep(s => Math.max(1, s - 1));
+    };
+
+    const handleGenerate = async () => {
+        setStep(3); // Generating step
         setLoading(true);
         setError(null);
         setCandidates([]);
@@ -170,29 +260,60 @@ const Create = () => {
         setLayoutSpec(null);
         setLayoutData(null);
 
+        // Simulate Status Stream
+        const statuses = ["Analyzing constraints...", "Generating adjacency graphs...", "Optimizing layouts...", "Rendering 3D Models...", "Finalizing Details..."];
+        let sIdx = 0;
+        const statusInterval = setInterval(() => {
+            setGenerationStatus(statuses[sIdx]);
+            sIdx = Math.min(sIdx + 1, statuses.length - 1);
+        }, 3000);
+
         try {
             const token = await currentUser.getIdToken();
             const response = await axios.post(
                 `${import.meta.env.VITE_API_URL}/api/v1/generate`,
-                { prompt },
+                { prompt: compiledPrompt },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
             if (response.data.success) {
-                // Determine winner first
-                const best = response.data.candidates.find(c => c.model_url === response.data.model_url) || response.data.candidates[0];
+                const jobId = response.data.job_id;
 
-                // Set candidates (mapped for UI)
-                setCandidates(response.data.candidates);
+                // Poll for completion
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const jobRes = await axios.get(`${import.meta.env.VITE_API_URL}/api/v1/jobs/${jobId}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
 
-                // Auto-select winner
-                handleSelectCandidate(best);
+                        if (jobRes.data.status === 'completed') {
+                            clearInterval(pollInterval);
+                            clearInterval(statusInterval);
+                            const result = jobRes.data.result;
+                            const best = result.candidates.find(c => c.model_url === result.model_url) || result.candidates[0];
+                            setCandidates(result.candidates);
+                            handleSelectCandidate(best);
+                            setStep(4); // Results
+                        } else if (jobRes.data.status === 'failed') {
+                            clearInterval(pollInterval);
+                            clearInterval(statusInterval);
+                            setError(jobRes.data.error || "Generation failed during processing.");
+                            setStep(2); // Go back to review on err
+                        }
+                    } catch (e) {
+                        console.error("Polling error", e);
+                    }
+                }, 2000);
             } else {
-                setError(response.data.error || "Generation failed");
+                clearInterval(statusInterval);
+                setError(response.data.error || "Failed to start generation");
+                setStep(2);
             }
         } catch (err) {
+            clearInterval(statusInterval);
             console.error(err);
             setError("Failed to connect to server. Ensure Backend is running.");
+            setStep(2);
         } finally {
             setLoading(false);
         }
@@ -202,142 +323,260 @@ const Create = () => {
         setSelectedCandidateId(candidate.id);
         setModelUrl(`${import.meta.env.VITE_API_URL}${candidate.model_url}`);
         setLayoutSpec(candidate.spec);
-        setLayoutData(candidate.layout.rooms); // Store rooms dict
+        setLayoutData(candidate.layout.rooms);
         setScore(candidate.score);
         setStats(candidate.stats);
     };
 
-    // Helper to get poly for hovered room
+    const resetWizard = () => {
+        setStep(1);
+        setCandidates([]);
+        setModelUrl(null);
+    };
+
     const hoveredPoly = hoveredRoomId && layoutData ? layoutData[hoveredRoomId] : null;
     const hoveredColor = hoveredRoomId && layoutSpec ? layoutSpec.rooms.find(r => r.id === hoveredRoomId)?.color : null;
 
     return (
         <div className="pt-20 px-4 h-screen flex flex-col md:flex-row overflow-hidden bg-cream">
-            {/* Left Panel: Input & Stats */}
+            {/* Left Panel: Wizard Input & Stats */}
             <motion.div
-                initial={{ x: -50, opacity: 0 }}
+                initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 className="w-full md:w-1/3 p-6 flex flex-col bg-white border-r border-stone-200 z-10 shadow-lg md:h-full overflow-y-auto"
             >
-                <h1 className="text-3xl font-light text-charcoal mb-6">Create Space</h1>
-
-                <div className="space-y-4 mb-8">
-                    <label className="block text-sm font-medium text-stone-600">
-                        Describe your dream home
-                    </label>
-                    <textarea
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="E.g., A cozy 2-bedroom apartment with a large balcony connected to the living room..."
-                        className="w-full p-4 rounded-xl border border-stone-200 focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none resize-none h-32 text-stone-700 bg-stone-50"
-                    />
-                    <button
-                        onClick={handleGenerate}
-                        disabled={loading || !prompt.trim()}
-                        className={`w-full py-4 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all
-              ${loading || !prompt.trim()
-                                ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                                : 'bg-charcoal text-cream hover:bg-stone-800 shadow-lg hover:shadow-xl transform hover:-translate-y-1'
-                            }`}
-                    >
-                        {loading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-                        <span>{loading ? "Generating Options..." : "Generate Layout"}</span>
-                    </button>
-                </div>
-
-                {/* Selection Grid (Miniatures) */}
-                {candidates.length > 0 && (
+                {step < 3 && (
                     <div className="mb-8">
-                        <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3">Select Design Candidate</h3>
-                        <div className="grid grid-cols-3 gap-2">
-                            {candidates.map((c) => (
-                                <div
-                                    key={c.id}
-                                    onClick={() => handleSelectCandidate(c)}
-                                    className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectedCandidateId === c.id ? 'border-charcoal ring-2 ring-charcoal/20' : 'border-stone-100 hover:border-stone-300'}`}
+                        <div className="flex items-center justify-between mb-2">
+                            <h1 className="text-2xl font-light text-charcoal">Design Wizard</h1>
+                            <span className="text-sm font-medium text-stone-500">Step {step} of 2</span>
+                        </div>
+                        <div className="h-1 w-full bg-stone-100 rounded-full overflow-hidden">
+                            <motion.div className="h-full bg-charcoal" initial={{ width: 0 }} animate={{ width: `${(step / 2) * 100}%` }} />
+                        </div>
+                    </div>
+                )}
+
+                <AnimatePresence mode="wait">
+                    {/* STEP 1: Rooms */}
+                    {step === 1 && (
+                        <motion.div key="step1" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="flex-1">
+                            <h2 className="text-lg font-medium text-stone-800 mb-4">1. Room Requirements</h2>
+
+                            <div className="flex bg-stone-100 p-1 rounded-xl mb-6">
+                                <button
+                                    onClick={() => setInputMode('manual')}
+                                    className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition-all ${inputMode === 'manual' ? 'bg-white shadow border border-stone-200 text-charcoal' : 'text-stone-500 hover:text-stone-700'}`}
                                 >
-                                    <div className="h-20 bg-stone-100">
-                                        {/* Mini Canvas */}
-                                        <Canvas camera={{ position: [0, 50, 0], fov: 50 }}>
-                                            <ambientLight intensity={0.5} />
-                                            <directionalLight position={[10, 20, 10]} intensity={1.5} />
-                                            <Suspense fallback={null}>
-                                                <Model url={`${import.meta.env.VITE_API_URL}${c.model_url}`} />
-                                            </Suspense>
-                                        </Canvas>
-                                    </div>
-                                    <div className="absolute top-1 right-1 bg-white/90 backdrop-blur px-1.5 py-0.5 rounded text-[10px] font-bold shadow-sm">
-                                        {c.score}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {error && (
-                    <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm mb-6">
-                        {error}
-                    </div>
-                )}
-
-                {layoutSpec && stats && (
-                    <div className="mt-0 bg-white p-6 rounded-2xl shadow-sm border border-stone-100">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                Architectural Analysis
-                            </h3>
-                            <div className="px-3 py-1 bg-stone-100 rounded-full text-xs font-mono text-stone-600">
-                                Score: {score}/100
+                                    Room Builder
+                                </button>
+                                <button
+                                    onClick={() => setInputMode('text')}
+                                    className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition-all ${inputMode === 'text' ? 'bg-white shadow border border-stone-200 text-charcoal' : 'text-stone-500 hover:text-stone-700'}`}
+                                >
+                                    Text Prompt
+                                </button>
                             </div>
-                        </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* Area Distribution */}
-                            <div className="h-64 relative">
-                                <p className="text-xs font-medium text-stone-400 uppercase tracking-wider mb-2 text-center">Area Distribution</p>
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={layoutSpec.rooms}
-                                            dataKey="area"
-                                            nameKey="type"
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={60}
-                                            outerRadius={80}
-                                            paddingAngle={5}
-                                            onMouseEnter={(_, index) => setHoveredRoomId(layoutSpec.rooms[index].id)}
-                                            onMouseLeave={() => setHoveredRoomId(null)}
-                                        >
-                                            {layoutSpec.rooms.map((entry, index) => (
-                                                <Cell
-                                                    key={`cell-${index}`}
-                                                    fill={entry.color || '#e5e7eb'}
-                                                    stroke="none"
-                                                    opacity={hoveredRoomId && hoveredRoomId !== entry.id ? 0.3 : 1}
+                            {inputMode === 'manual' ? (
+                                <>
+                                    <div className="mb-6 bg-stone-50 p-4 rounded-xl border border-stone-200">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="block text-sm font-medium text-stone-700">Target Total Area (sq{unit})</label>
+                                            <button
+                                                onClick={() => setUnit(u => u === 'ft' ? 'm' : 'ft')}
+                                                className="text-xs bg-stone-200 text-stone-600 px-2 py-0.5 rounded font-mono hover:bg-stone-300"
+                                            >
+                                                {unit === 'ft' ? 'Switch to Meters' : 'Switch to Feet'}
+                                            </button>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            value={totalAreaConstraint}
+                                            onChange={(e) => setTotalAreaConstraint(Number(e.target.value))}
+                                            className="w-full p-2 border border-stone-200 rounded-lg outline-none"
+                                        />
+                                    </div>
+
+                                    <div className="mb-6 h-56 bg-stone-50 rounded-xl border border-stone-200 p-4 flex flex-col relative w-full items-center justify-center">
+                                        <div className="absolute top-2 left-3 text-xs font-bold text-stone-400 tracking-wider z-10">AREA DISTRIBUTION</div>
+                                        {/* Center Label (Placed before chart to fix z-index tooltip overlap) */}
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4 z-0">
+                                            <span className="text-stone-400 text-[10px] font-bold">TOTAL</span>
+                                            <span className="text-stone-700 text-sm font-bold">{totalAreaConstraint}</span>
+                                        </div>
+                                        <div className="w-full h-full pt-4 relative z-10">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie
+                                                        data={pieData}
+                                                        cx="50%"
+                                                        cy="50%"
+                                                        innerRadius={45}
+                                                        outerRadius={70}
+                                                        paddingAngle={2}
+                                                        dataKey="value"
+                                                        stroke="none"
+                                                    >
+                                                        {pieData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip content={<CustomTooltip />} />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3 mb-6">
+                                        {rooms.map((room, idx) => (
+                                            <div key={room.id} className="flex gap-2 items-center">
+                                                <div className="w-8 text-center text-xs font-medium text-stone-400">{idx + 1}</div>
+                                                <select
+                                                    value={room.type}
+                                                    onChange={(e) => handleRoomChange(room.id, 'type', e.target.value)}
+                                                    className="flex-1 p-2 border border-stone-200 rounded-lg outline-none text-sm bg-white"
+                                                >
+                                                    <option value="living">Living Room</option>
+                                                    <option value="bedroom">Bedroom</option>
+                                                    <option value="bathroom">Bathroom</option>
+                                                    <option value="kitchen">Kitchen</option>
+                                                    <option value="dining">Dining Room</option>
+                                                    <option value="study">Study</option>
+                                                    <option value="balcony">Balcony</option>
+                                                </select>
+                                                <input
+                                                    type="number"
+                                                    value={room.area}
+                                                    onChange={(e) => handleRoomChange(room.id, 'area', Number(e.target.value))}
+                                                    className="w-24 p-2 border border-stone-200 rounded-lg outline-none text-sm text-center"
+                                                    placeholder={`sq${unit}`}
                                                 />
-                                            ))}
-                                        </Pie>
-                                    </PieChart>
-                                </ResponsiveContainer>
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div className="text-center mt-6">
-                                        <span className="block text-2xl font-bold text-stone-800">
-                                            {hoveredRoomId ? Math.round(layoutSpec.rooms.find(r => r.id === hoveredRoomId)?.area || 0) : layoutSpec.rooms.reduce((a, b) => a + b.area, 0)}
-                                        </span>
-                                        <span className="text-[10px] text-stone-400 uppercase tracking-widest">
-                                            {hoveredRoomId ? layoutSpec.rooms.find(r => r.id === hoveredRoomId)?.type : 'TOTAL SQFT'}
-                                        </span>
+                                                <button onClick={() => handleRemoveRoom(room.id)} className="p-2 text-stone-400 hover:text-red-500">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button onClick={handleAddRoom} className="w-full py-2 border-2 border-dashed border-stone-200 text-stone-500 rounded-lg text-sm hover:border-stone-400 hover:text-stone-700 flex items-center justify-center gap-1">
+                                            <Plus size={16} /> Add Room
+                                        </button>
                                     </div>
+                                </>
+                            ) : (
+                                <div className="mb-6">
+                                    <div className="flex justify-between items-end mb-2">
+                                        <p className="text-sm text-stone-500">Describe the rooms and dimensions you want conversationally.</p>
+                                        <button
+                                            onClick={() => setUnit(u => u === 'ft' ? 'm' : 'ft')}
+                                            className="text-xs bg-stone-200 text-stone-600 px-2 py-0.5 rounded font-mono hover:bg-stone-300 whitespace-nowrap"
+                                        >
+                                            {unit === 'ft' ? 'Switch to Meters' : 'Switch to Feet'}
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        value={textPrompt}
+                                        onChange={(e) => setTextPrompt(e.target.value)}
+                                        placeholder={`E.g., I want a 1000 sq${unit} house with a 300 sq${unit} living room, a 150 sq${unit} bedroom...`}
+                                        className="w-full p-4 rounded-xl border border-stone-200 focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none resize-none h-48 text-stone-700 bg-stone-50"
+                                    />
+                                </div>
+                            )}
+
+                            {validationError && (
+                                <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg mb-6 border border-red-100 flex items-start gap-2">
+                                    <span className="mt-0.5">⚠️</span> {validationError}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end">
+                                <button onClick={nextStep} className="px-6 py-2.5 bg-charcoal text-white rounded-xl hover:bg-stone-800 flex items-center gap-2">
+                                    Review Design <ArrowRight size={16} />
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* STEP 2: Review */}
+                    {step === 2 && (
+                        <motion.div key="step2" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="flex-1 flex flex-col">
+                            <h2 className="text-lg font-medium text-stone-800 mb-4">2. Review Details</h2>
+
+                            <div className="flex-1 bg-stone-50 rounded-xl p-5 border border-stone-200 mb-6 font-mono text-sm text-stone-600 leading-relaxed overflow-y-auto">
+                                <div className="mb-4">
+                                    <span className="font-bold text-stone-800">Prompt sent to AI:</span><br />
+                                    {compiledPrompt}
+                                </div>
+                                <div>
+                                    <span className="font-bold text-stone-800">Metrics:</span><br />
+                                    {inputMode === 'manual' ? (
+                                        <>
+                                            - Total Target Area: {totalAreaConstraint} sq{unit}<br />
+                                            - Room Count: {rooms.length}
+                                        </>
+                                    ) : (
+                                        <span>- Text Prompt Driven Mode</span>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Scores */}
-                            <div>
-                                <p className="text-xs font-medium text-stone-400 uppercase tracking-wider mb-4">Performance Metrics</p>
-                                <div className="space-y-4">
+                            {error && (
+                                <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg mb-6 border border-red-100">
+                                    {error}
+                                </div>
+                            )}
+
+                            <div className="flex justify-between mt-auto">
+                                <button onClick={prevStep} className="px-6 py-2.5 text-stone-600 border border-stone-200 rounded-xl hover:bg-stone-50 flex items-center gap-2">
+                                    <ArrowLeft size={16} /> Edit
+                                </button>
+                                <button onClick={handleGenerate} className="px-6 py-2.5 bg-charcoal text-white rounded-xl hover:bg-stone-800 flex items-center gap-2 shadow-lg">
+                                    <Send size={16} /> Generate Now
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* STEP 3: Generating Overlay UI on left side */}
+                    {step === 3 && (
+                        <motion.div key="step3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center justify-center text-center">
+                            <Loader2 className="w-12 h-12 animate-spin text-charcoal mb-6" />
+                            <h2 className="text-xl font-light text-charcoal mb-2">Architecting Solutions</h2>
+                            <p className="text-stone-500 font-mono text-xs bg-stone-100 px-4 py-2 rounded-full">{generationStatus || "Initializing..."}</p>
+                        </motion.div>
+                    )}
+
+                    {/* STEP 4: Results */}
+                    {step === 4 && layoutSpec && stats && (
+                        <motion.div key="step4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full pl-1">
+                            <div className="flex justify-between items-center mb-6">
+                                <h1 className="text-2xl font-light text-charcoal">Design Candidates</h1>
+                                <button onClick={resetWizard} className="text-xs text-stone-500 hover:text-charcoal underline">New Project</button>
+                            </div>
+
+                            {/* Candidate Gallery */}
+                            <div className="grid grid-cols-3 gap-3 mb-6">
+                                {candidates.map((c) => (
+                                    <div
+                                        key={c.id}
+                                        onClick={() => handleSelectCandidate(c)}
+                                        className={`relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all bg-stone-50 ${selectedCandidateId === c.id ? 'border-charcoal ring-2 ring-charcoal/20' : 'border-stone-100 hover:border-stone-300'}`}
+                                    >
+                                        <div className="h-20 flex items-center justify-center">
+                                            <span className="text-[10px] font-bold text-stone-400 uppercase">Option {c.id + 1}</span>
+                                        </div>
+                                        <div className={`absolute top-0 right-0 px-2 py-0.5 rounded-bl-lg text-[10px] font-bold ${selectedCandidateId === c.id ? 'bg-charcoal text-white' : 'bg-white/80 text-stone-600'}`}>
+                                            Score: {c.score}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Metrics for selected */}
+                            <div className="flex-1 overflow-y-auto pr-2">
+                                <div className="flex items-center justify-between mb-4 mt-2">
+                                    <h3 className="text-sm font-semibold text-stone-800">Analysis</h3>
+                                </div>
+                                <div className="space-y-4 mb-6">
                                     {[
                                         { label: 'Efficiency', val: stats.efficiency, color: '#10b981' },
                                         { label: 'Privacy', val: stats.privacy, color: '#6366f1' },
@@ -349,53 +588,92 @@ const Create = () => {
                                                 <span className="text-stone-600 font-medium">{stat.label}</span>
                                                 <span className="text-stone-400">{stat.val}%</span>
                                             </div>
-                                            <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full rounded-full transition-all duration-1000 ease-out"
-                                                    style={{ width: `${stat.val}%`, backgroundColor: stat.color }}
-                                                />
+                                            <div className="h-1.5 w-full bg-stone-100 rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full" style={{ width: `${stat.val}%`, backgroundColor: stat.color }} />
                                             </div>
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        </div>
 
-                        {/* Legend */}
-                        <div className="mt-6 pt-6 border-t border-stone-100">
-                            <div className="grid grid-cols-2 gap-3">
-                                {layoutSpec.rooms.map((room, idx) => (
-                                    <div
-                                        key={idx}
-                                        className={`flex items-center justify-between p-2 rounded-lg transition-colors cursor-pointer ${hoveredRoomId === room.id ? 'bg-stone-100 ring-1 ring-stone-300' : 'hover:bg-stone-50'}`}
-                                        onMouseEnter={() => setHoveredRoomId(room.id)}
-                                        onMouseLeave={() => setHoveredRoomId(null)}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div
-                                                className="w-3 h-3 rounded-full"
-                                                style={{ backgroundColor: room.color || '#e5e7eb' }}
-                                            />
-                                            <span className="text-sm text-stone-600 capitalize">{room.type}</span>
-                                        </div>
-                                        <span className="text-sm font-mono text-stone-400">{Math.round(room.area)} sqft</span>
+                                {/* Generated Area Distribution Pie */}
+                                <div className="mb-6 h-56 bg-white rounded-xl border border-stone-200 p-4 flex flex-col relative w-full items-center justify-center shadow-sm">
+                                    <div className="absolute top-2 left-3 text-xs font-bold text-stone-400 tracking-wider z-10">GENERATED AREAS</div>
+                                    {/* Center Label Placed First */}
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4 z-0">
+                                        <span className="text-stone-400 text-[10px] font-bold">BUILT</span>
+                                        <span className="text-stone-700 text-sm font-bold">{Math.round(layoutSpec.rooms.reduce((acc, r) => acc + r.area, 0))}</span>
                                     </div>
-                                ))}
+                                    <div className="w-full h-full pt-4 relative z-10">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie
+                                                    data={layoutSpec.rooms}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    innerRadius={45}
+                                                    outerRadius={70}
+                                                    paddingAngle={2}
+                                                    dataKey="area"
+                                                    nameKey="type"
+                                                    stroke="none"
+                                                    onMouseEnter={(e) => setHoveredRoomId(e.id)}
+                                                    onMouseLeave={() => setHoveredRoomId(null)}
+                                                >
+                                                    {layoutSpec.rooms.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={entry.color || '#e5e7eb'} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip content={<CustomTooltip />} />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Room Legend */}
+                                <div className="pt-4 border-t border-stone-100">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {layoutSpec.rooms.map((room, idx) => (
+                                            <div
+                                                key={idx}
+                                                className={`flex items-center justify-between p-2 rounded-lg text-xs cursor-pointer ${hoveredRoomId === room.id ? 'bg-stone-100 ring-1 ring-stone-200' : 'hover:bg-stone-50'}`}
+                                                onMouseEnter={() => setHoveredRoomId(room.id)}
+                                                onMouseLeave={() => setHoveredRoomId(null)}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: room.color || '#e5e7eb' }} />
+                                                    <span className="text-stone-600 capitalize truncate w-16" title={room.type}>{room.type}</span>
+                                                </div>
+                                                <span className="font-mono text-stone-400">{Math.round(room.area)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <a
+                                    href={modelUrl}
+                                    download
+                                    className="mt-6 flex items-center justify-center p-3 border border-stone-200 rounded-xl text-sm text-charcoal hover:bg-stone-50 transition-colors w-full"
+                                >
+                                    <Download size={16} className="mr-2" /> Download .PLY Model
+                                </a>
                             </div>
-                        </div>
-                        <a
-                            href={modelUrl}
-                            download
-                            className="mt-6 flex items-center justify-center text-sm text-charcoal hover:underline mt-4 cursor-pointer"
-                        >
-                            <Download size={14} className="mr-1" /> Download .PLY Model
-                        </a>
-                    </div>
-                )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
 
             {/* Right Panel: 3D Visualization */}
             <div className="w-full md:w-2/3 h-[50vh] md:h-full bg-stone-100 relative">
+                {step === 3 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-stone-100 z-20">
+                        {/* Empty placeholder during generation to look cool */}
+                        <div className="w-full h-full relative overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-stone-200 via-stone-100 to-stone-100">
+                            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] flex items-center justify-center">
+                                <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ repeat: Infinity, duration: 2, repeatType: "reverse" }} className="w-32 h-32 border border-charcoal/20 border-dashed rounded-full" />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <Canvas camera={{ position: [20, 30, 20], fov: 45, far: 10000 }}>
                     <fog attach="fog" args={['#f5f5f4', 50, 10000]} />
                     <ambientLight intensity={0.5} />
@@ -403,69 +681,57 @@ const Create = () => {
                     <Suspense fallback={null}>
                         <Center>
                             {modelUrl && <Model url={modelUrl} />}
-
-                            {/* Interactive Layer */}
                             {layoutSpec && layoutData && layoutSpec.rooms.map(room => (
                                 <InteractiveRoom
                                     key={room.id}
                                     roomId={room.id}
                                     roomPoly={layoutData[room.id]}
                                     setHoveredRoomId={setHoveredRoomId}
+                                    isHovered={hoveredRoomId === room.id}
+                                    roomSpec={room}
+                                    unit={unit}
+                                    computeRoomDimensions={computeRoomDimensions}
                                 />
                             ))}
-
-                            {/* Highlight Layer */}
-                            {/* Highlight Layer */}
                             {hoveredPoly && <RoomHighlight roomPoly={hoveredPoly} color={hoveredColor} />}
-
-                            {/* 1-Meter Grid for Scale inside Center so it aligns with base */}
-                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={1} sectionThickness={1.5} cellThickness={0} sectionColor="#e5e7eb" fadeDistance={30} />
+                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={gridSize} sectionThickness={1.5} cellThickness={0.5} cellSize={gridSize / 5} sectionColor="#e5e7eb" fadeDistance={30} />
                         </Center>
-                        {/* ContactShadows removed per user request */}                    </Suspense>
-
+                    </Suspense>
                     <OrbitControls makeDefault />
                 </Canvas>
 
-                {/* North Arrow UI */}
-                <div className="absolute top-6 right-6 pointer-events-none">
+                {/* Overlays */}
+                <div className="absolute top-6 right-6 pointer-events-none flex flex-col items-end gap-3">
                     <div className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center border border-stone-200">
                         <div className="flex flex-col items-center">
                             <span className="text-[10px] font-bold text-red-500">N</span>
-                            <div className="w-0.5 h-4 bg-stone-800 rounded-full"></div>
+                            <div className="w-0.5 h-4 bg-stone-800 rounded-full" />
                         </div>
+                    </div>
+                    {/* Grid Scale Slider */}
+                    <div className="bg-white/90 backdrop-blur rounded-lg shadow-sm border border-stone-200 flex flex-col pointer-events-auto p-3 w-40">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500">Grid Scale</span>
+                            <span className="text-[10px] font-mono font-bold text-charcoal">{gridSize.toFixed(1)}x</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="3.0"
+                            max="10.0"
+                            step="0.1"
+                            value={gridSize}
+                            onChange={(e) => setGridSize(parseFloat(e.target.value))}
+                            className="w-full h-1 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-charcoal"
+                        />
                     </div>
                 </div>
 
-                {/* Scale Legend UI */}
-                <div className="absolute bottom-6 right-6 pointer-events-none">
-                    <div className="bg-white/90 backdrop-blur px-3 py-2 rounded-lg shadow-sm border border-stone-200 flex items-center gap-3">
-                        <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Scale</span>
-                        <div className="flex flex-col items-center gap-1">
-                            <div className="w-12 border-b-2 border-stone-800 relative">
-                                <div className="absolute top-[-3px] left-0 w-0.5 h-1.5 bg-stone-800"></div>
-                                <div className="absolute top-[-3px] right-0 w-0.5 h-1.5 bg-stone-800"></div>
-                            </div>
-                            <span className="text-[10px] font-medium text-stone-600">1 Grid = 1m</span>
-                        </div>
-                    </div>
-                </div>
-
-                {!modelUrl && !loading && (
+                {!modelUrl && step !== 3 && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-stone-400 pointer-events-none">
                         <div className="w-16 h-16 border-2 border-stone-300 rounded-full flex items-center justify-center mb-4">
-                            <span className="text-2xl">3D</span>
+                            <span className="text-2xl font-light">3D</span>
                         </div>
-                        <p>Your generated design will appear here</p>
-                    </div>
-                )}
-
-                {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-20">
-                        <div className="text-center">
-                            <Loader2 className="w-12 h-12 text-charcoal animate-spin mx-auto mb-4" />
-                            <p className="text-charcoal font-medium">Architecting 3 Candidates...</p>
-                            <p className="text-xs text-stone-500 mt-2">Computing Privacy & Daylight Analysis</p>
-                        </div>
+                        <p>Complete the wizard to generate a layout.</p>
                     </div>
                 )}
             </div>

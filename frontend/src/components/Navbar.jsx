@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
+import { ThemeToggle } from './ThemeToggle';
 
 const NavLink = ({ to, active, children }) => (
     <Link to={to} className="relative py-1 group">
@@ -39,6 +40,7 @@ const Navbar = () => {
                 </div>
 
                 <div className="flex items-center space-x-4">
+                    <ThemeToggle />
                     {currentUser ? (
                         <div className="flex items-center space-x-4">
                             <span className="text-sm text-stone-500 hidden sm:inline">{currentUser.email}</span>

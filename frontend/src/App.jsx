@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import Create from './pages/Create';
@@ -12,8 +12,10 @@ import Profile from './pages/Profile';
 
 const PrivateRoute = () => {
     const { currentUser, loading } = useAuth();
+    const location = useLocation();
+
     if (loading) return <div className="pt-24 text-center">Loading...</div>;
-    return currentUser ? <Outlet /> : <Navigate to="/login" />;
+    return currentUser ? <Outlet /> : <Navigate to="/login" state={{ from: location }} replace />;
 };
 
 function App() {

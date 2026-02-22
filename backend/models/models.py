@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from bson import ObjectId
+from enum import Enum
 
 class PyObjectId(ObjectId):
     @classmethod
@@ -20,11 +21,16 @@ class PyObjectId(ObjectId):
 
 class DesignBase(BaseModel):
     user_id: str
-    prompt: str
+    prompt: Optional[str] = None
+    name: str = "Untitled Project"
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    is_deleted: bool = False
+    parent_id: Optional[str] = None  # Tracking versions/duplications
     layout_data: Optional[Dict[str, Any]] = None
     image_url: Optional[str] = None
     model_url: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     model_config = {
         "populate_by_name": True,
@@ -38,10 +44,23 @@ class DesignCreate(BaseModel):
 class DesignResponse(DesignBase):
     id: str = Field(alias="_id")
 
+class UserRole(str, Enum):
+    free = "free"
+    pro = "pro"
+    admin = "admin"
+
+class UsageStats(BaseModel):
+    generations_this_month: int = 0
+    total_generations: int = 0
+    storage_used_bytes: int = 0
+
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     photo_url: Optional[str] = None
+    role: UserRole = UserRole.free
+    joined_date: datetime = Field(default_factory=datetime.utcnow)
+    usage_stats: UsageStats = Field(default_factory=UsageStats)
 
 class UserCreate(UserBase):
     firebase_uid: str

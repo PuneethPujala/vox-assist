@@ -5,7 +5,7 @@ class ProximityLayoutGenerator:
     def __init__(self):
         self.room_types = [
             'living', 'bedroom', 'kitchen', 'bathroom', 
-            'balcony', 'storage', 'garden', 'parking', 'study', 'dining'
+            'balcony', 'storage', 'garden', 'parking', 'study', 'dining', 'hallway'
         ]
         
         self.synonym_map = {
@@ -18,7 +18,8 @@ class ProximityLayoutGenerator:
             'storage':  ['storage', 'store', 'closet', 'utility'],
             'garden':   ['garden', 'lawn', 'yard', 'green'],
             'parking':  ['parking', 'garage', 'carport'],
-            'study':    ['study', 'office', 'library', 'workspace', 'work']
+            'study':    ['study', 'office', 'library', 'workspace', 'work'],
+            'hallway':  ['hallway', 'corridor', 'passage', 'circulation']
         }
         
         self.word_to_num = {
@@ -308,9 +309,9 @@ class ProximityLayoutGenerator:
                     room['area'] = min_area
 
         # --- FILL MISSING ESSENTIALS ---
-        # We only force essentials: Living, Bedroom, Kitchen, Bathroom
+        # We only force essentials: Living, Bedroom, Kitchen, Bathroom, Hallway
         # Optional rooms (Storage, Balcony, etc.) are NOT added automatically unless mentioned
-        essential_types = ['living', 'bedroom', 'kitchen', 'bathroom']
+        essential_types = ['living', 'bedroom', 'kitchen', 'bathroom', 'hallway']
         existing_types = {r['type'] for r in room_list}
         
         missing_essentials = [t for t in essential_types if t not in existing_types]
@@ -334,11 +335,11 @@ class ProximityLayoutGenerator:
         # Smart Filling Strategy
         # 1. Update remaining area based on explicit rooms
         used_area = sum(r['area'] for r in room_list if not r['auto'])
-        remaining_area = total_area - used_area
+        remaining_area = max(0, total_area - used_area)
         
         print(f"Total: {total_area} | Explicit Used: {used_area} | Remaining: {remaining_area}")
 
-        # 2. Get list of auto rooms (including the ones we just added)
+        # 2. Get list of auto rooms
         auto_rooms = [r for r in room_list if r['auto']]
         
         if auto_rooms:
@@ -347,14 +348,55 @@ class ProximityLayoutGenerator:
                 for r in auto_rooms:
                     r['area'] = self.min_areas.get(r['type'], 5)
             else:
-                # Distribute remaining area according to default ratios
-                total_ratio = sum(self.default_ratios.get(r['type'], 0.1) for r in auto_rooms)
-                if total_ratio == 0: total_ratio = 1
+                # Rule 3: Default distribution
+                DEFAULTS = {
+                    "living": 0.28,
+                    "bedroom": 0.31, # combined master (18) + bedroom (13)
+                    "kitchen": 0.12,
+                    "dining": 0.10,
+                    "bathroom": 0.08,
+                    "hallway": 0.07,
+                    "storage": 0.04
+                }
                 
+                # Rule 2: "bigger [room]" -> 1.5x default percentage
+                amplified_rooms = set()
+                for t in self.room_types:
+                    for syn in self.synonym_map.get(t, [t]):
+                        if re.search(r'\b(bigger|larger|huge|massive|large)\s+' + syn + r'\b', prompt.lower()):
+                            amplified_rooms.add(t)
+                
+                adjusted_defaults = {}
+                for t, pct in DEFAULTS.items():
+                    adjusted_defaults[t] = pct * 1.5 if t in amplified_rooms else pct
+                
+                # Count instances of each auto room type for equal splitting
+                type_counts = {}
                 for r in auto_rooms:
-                    ratio = self.default_ratios.get(r['type'], 0.1)
-                    share = (ratio / total_ratio) * remaining_area
-                    r['area'] = max(self.min_areas.get(r['type'], 5), int(share))
+                    type_counts[r['type']] = type_counts.get(r['type'], 0) + 1
+                
+                # Normalize percentages of unspecified rooms to sum to 1
+                total_pct = 0
+                for r in auto_rooms:
+                    base_ratio = adjusted_defaults.get(r['type'], 0.1)
+                    r_ratio = base_ratio / type_counts[r['type']]
+                    total_pct += r_ratio
+                
+                if total_pct == 0: total_pct = 1
+                
+                # Distribute remaining
+                for r in auto_rooms:
+                    base_ratio = adjusted_defaults.get(r['type'], 0.1)
+                    r_ratio = base_ratio / type_counts[r['type']]
+                    share = (r_ratio / total_pct) * remaining_area
+                    
+                    # Rule 5: No single room > 35% of total area unless explicitly requested
+                    max_allowed = total_area * 0.35
+                    new_area = int(share)
+                    if new_area > max_allowed:
+                        new_area = int(max_allowed)
+                    
+                    r['area'] = max(self.min_areas.get(r['type'], 5), new_area)
                     
         # 3. Final Scaling to match Total Area exactly
         current_total = sum(r['area'] for r in room_list)
@@ -370,7 +412,7 @@ class ProximityLayoutGenerator:
 if __name__ == "__main__":
     architect = ProximityLayoutGenerator()
     
-    prompt = "I need a 2000 sqft house. I want 2 bedrooms, one being 400 and one being 300 sqft. And a kitchen of 250 sqft. And a small 50 sqft garden. And storage of 11 sqft. And Hall of 800 sqft. And a veranda of 150."
+    prompt = "I need an ideal house in 1500 sqft."
     
     result = architect.generate_blueprint(prompt)
     print(json.dumps(result, indent=4))

@@ -1,7 +1,7 @@
 import React from 'react';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
 const Login = () => {
@@ -11,13 +11,30 @@ const Login = () => {
     const [isSignUp, setIsSignUp] = React.useState(false);
     const [error, setError] = React.useState(null);
 
+    const location = useLocation();
+    const from = location.state?.from?.pathname || '/dashboard';
+
     const handleGoogleLogin = async () => {
         setError(null);
         try {
             await signInWithPopup(auth, googleProvider);
-            navigate('/dashboard');
+            navigate(from, { replace: true });
         } catch (err) {
             console.error("Login failed:", err);
+            setError(err.message.replace("Firebase: ", ""));
+        }
+    };
+
+    const handleResetPassword = async () => {
+        if (!email) {
+            setError("Please enter your email address to reset password.");
+            return;
+        }
+        try {
+            const { sendPasswordResetEmail } = await import("firebase/auth");
+            await sendPasswordResetEmail(auth, email);
+            setError("Password reset email sent! Check your inbox.");
+        } catch (err) {
             setError(err.message.replace("Firebase: ", ""));
         }
     };
@@ -26,13 +43,15 @@ const Login = () => {
         e.preventDefault();
         setError(null);
         try {
-            const { createUserWithEmailAndPassword, signInWithEmailAndPassword } = await import("firebase/auth");
+            const { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification } = await import("firebase/auth");
             if (isSignUp) {
-                await createUserWithEmailAndPassword(auth, email, password);
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                await sendEmailVerification(userCredential.user);
+                setError("Account created! Please verify your email.");
             } else {
                 await signInWithEmailAndPassword(auth, email, password);
+                navigate(from, { replace: true });
             }
-            navigate('/dashboard');
         } catch (err) {
             console.error("Auth failed:", err);
             setError(err.message.replace("Firebase: ", ""));
@@ -75,6 +94,17 @@ const Login = () => {
                             className="w-full p-3 border border-stone-200 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none"
                             required
                         />
+                        {!isSignUp && (
+                            <div className="flex justify-end mt-1">
+                                <button
+                                    type="button"
+                                    onClick={handleResetPassword}
+                                    className="text-xs text-stone-500 hover:text-stone-800 transition-colors"
+                                >
+                                    Forgot password?
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <button
                         type="submit"

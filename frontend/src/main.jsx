@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
+import { ThemeProvider } from './components/ThemeProvider'
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -35,7 +36,9 @@ class ErrorBoundary extends React.Component {
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <ErrorBoundary>
-            <App />
+            <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
+                <App />
+            </ThemeProvider>
         </ErrorBoundary>
     </React.StrictMode>,
 )

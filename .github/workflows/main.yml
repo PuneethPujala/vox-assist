@@ -1,0 +1,66 @@
+name: VoxAssist CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest httpx pip-audit
+        if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+        
+    - name: Security Vulnerability Scan (pip-audit)
+      run: |
+        pip-audit -r backend/requirements.txt
+        
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 backend --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings
+        flake8 backend --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: Run Backend Tests
+      env:
+        PYTHONPATH: .
+      run: |
+        pytest backend/tests/
+        
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+        
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: "18"
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Security Vulnerability Scan (npm audit)
+      run: npm audit --audit-level=high
+      continue-on-error: true
+      
+    - name: Build
+      run: npm run build
