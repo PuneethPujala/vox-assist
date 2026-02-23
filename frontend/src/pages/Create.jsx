@@ -1,6 +1,6 @@
 import React, { useState, Suspense, useEffect } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Center, Grid, Html } from '@react-three/drei';
+import { OrbitControls, Center, Grid, Html, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -698,22 +698,22 @@ const Create = () => {
                         </Center>
                     </Suspense>
                     <OrbitControls makeDefault />
+                    <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
+                        <GizmoViewport axisColors={['#ef4444', '#10b981', '#3b82f6']} labelColor="white" />
+                    </GizmoHelper>
                 </Canvas>
 
                 {/* Overlays */}
                 <div className="absolute top-6 right-6 pointer-events-none flex flex-col items-end gap-3">
-                    <div className="w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center border border-stone-200">
-                        <div className="flex flex-col items-center">
-                            <span className="text-[10px] font-bold text-red-500">N</span>
-                            <div className="w-0.5 h-4 bg-stone-800 rounded-full" />
-                        </div>
-                    </div>
                     {/* Grid Scale Slider */}
                     <div className="bg-white/90 backdrop-blur rounded-lg shadow-sm border border-stone-200 flex flex-col pointer-events-auto p-3 w-40">
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500">Grid Scale</span>
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500">Grid Size</span>
                             <span className="text-[10px] font-mono font-bold text-charcoal">{gridSize.toFixed(1)}x</span>
                         </div>
+                        <p className="text-[9px] text-stone-400 mb-2 font-mono">
+                            1 sq = {unit === 'ft' ? `~${(gridSize * 3.28).toFixed(1)} ft` : `${gridSize.toFixed(1)} m`}
+                        </p>
                         <input
                             type="range"
                             min="3.0"
