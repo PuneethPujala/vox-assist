@@ -1,6 +1,6 @@
 import React, { useState, Suspense, useEffect } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Center, Grid, Html, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import { OrbitControls, Center, Grid, Html } from '@react-three/drei';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -132,7 +132,7 @@ const Create = () => {
     ]);
     const [inputMode, setInputMode] = useState('manual'); // 'manual' or 'text'
     const [unit, setUnit] = useState('ft'); // 'ft' or 'm'
-    const [gridSize, setGridSize] = useState(3.0);
+    const [gridSize, setGridSize] = useState(1.0);
     const [textPrompt, setTextPrompt] = useState('');
     const [totalAreaConstraint, setTotalAreaConstraint] = useState(1000);
     const [validationError, setValidationError] = useState('');
@@ -694,13 +694,11 @@ const Create = () => {
                                 />
                             ))}
                             {hoveredPoly && <RoomHighlight roomPoly={hoveredPoly} color={hoveredColor} />}
-                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={gridSize} sectionThickness={1.5} cellThickness={0.5} cellSize={gridSize / 5} sectionColor="#e5e7eb" fadeDistance={30} />
+                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={gridSize * 5} sectionThickness={1.5} cellThickness={0.5} cellSize={gridSize} sectionColor="#e5e7eb" fadeDistance={30} />
                         </Center>
                     </Suspense>
                     <OrbitControls makeDefault />
-                    <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-                        <GizmoViewport axisColors={['#ef4444', '#10b981', '#3b82f6']} labelColor="white" />
-                    </GizmoHelper>
+                    <axesHelper args={[5]} position={[0, 0.01, 0]} />
                 </Canvas>
 
                 {/* Overlays */}
@@ -712,12 +710,12 @@ const Create = () => {
                             <span className="text-[10px] font-mono font-bold text-charcoal">{gridSize.toFixed(1)}x</span>
                         </div>
                         <p className="text-[9px] text-stone-400 mb-2 font-mono">
-                            1 sq = {unit === 'ft' ? `~${(gridSize * 3.28).toFixed(1)} ft` : `${gridSize.toFixed(1)} m`}
+                            1 cell = {unit === 'ft' ? `~${(gridSize * 3.28084).toFixed(1)} ft` : `${gridSize.toFixed(1)} m`}
                         </p>
                         <input
                             type="range"
-                            min="3.0"
-                            max="10.0"
+                            min="0.5"
+                            max="3.0"
                             step="0.1"
                             value={gridSize}
                             onChange={(e) => setGridSize(parseFloat(e.target.value))}
