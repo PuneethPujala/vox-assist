@@ -14,7 +14,6 @@ sys.path.append(os.path.join(root_dir, "backend", "engine"))
 from backend.engine.text_to_specs_v2 import ProximityLayoutGenerator
 from backend.engine.layout_synthesizer_adjacency import synthesize_layout_from_spec
 from backend.engine.resplan_to_3d import build_house_from_layout
-from backend.engine.export_stl import generate_layout_stl
 from backend.engine.scoring_engine import ScoringEngine
 # from backend.engine.floorplan_2d_visualizer import draw_2d_floorplan
 
@@ -73,7 +72,6 @@ class GenerationService:
                 stats_candidate = ScoringEngine.evaluate(layout_candidate)
                 score_candidate = stats_candidate["average"]
                 
-                
                 # C. Generate 3D Model (Unique per candidate)
                 model_id = f"{generation_id}_{i}"
                 model_filename = f"model_{model_id}.ply"
@@ -88,19 +86,6 @@ class GenerationService:
                 )
                 
                 model_url = f"/static/models/{model_filename}"
-                
-                # D. Generate 3D Printable STL
-                stl_filename = f"model_{model_id}.stl"
-                stl_output_path = os.path.join(models_dir, stl_filename)
-                
-                await loop.run_in_executor(
-                    None,
-                    generate_layout_stl,
-                    layout_candidate,
-                    stl_output_path
-                )
-                
-                stl_url = f"/static/models/{stl_filename}"
                 
                 # Add to list
                 # Serialize the layout so it can be sent over JSON
@@ -144,7 +129,6 @@ class GenerationService:
                     "stats": stats_candidate,
                     "score": score_candidate,
                     "model_url": model_url,
-                    "stl_url": stl_url,
                     "seed": seed
                 })
             
@@ -158,8 +142,6 @@ class GenerationService:
             # Note: best_candidate['layout'] is now ALREADY serialized from the loop above!
             serialized_layout = best_candidate['layout']
             display_spec = best_candidate['spec']
-            model_url = best_candidate['model_url']
-            stl_url = best_candidate['stl_url']
             
             # --- COLOR SYNC FIX (Cleaned up) ---
             # Display spec is now pre-calculated per candidate. 
@@ -183,7 +165,6 @@ class GenerationService:
                 "spec": display_spec, # Send sqft + colors to frontend
                 "layout": serialized_layout, 
                 "model_url": model_url,
-                "stl_url": stl_url,
                 "design_id": generation_id,
                 "score": stats.get("efficiency", 0.0), # EXTRACTED FROM STATS
                 "stats": stats, # Detailed scores
