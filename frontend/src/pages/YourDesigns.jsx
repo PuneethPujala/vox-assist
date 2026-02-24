@@ -148,14 +148,23 @@ const YourDesigns = () => {
                             )}
 
                             {/* Hover Actions Overlay */}
-                            <div className="absolute inset-0 bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-sm">
+                            <div className="absolute inset-0 bg-white/90 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 backdrop-blur-sm">
                                 {design.model_url && (
                                     <a
                                         href={`${import.meta.env.VITE_API_URL}${design.model_url}`}
-                                        className="bg-charcoal text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-800 transition-colors shadow-sm"
+                                        className="bg-stone-100 text-stone-700 border border-stone-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-50 transition-colors shadow-sm w-3/4 text-center"
                                         download
                                     >
                                         Download .PLY
+                                    </a>
+                                )}
+                                {design.stl_url && (
+                                    <a
+                                        href={`${import.meta.env.VITE_API_URL}${design.stl_url}`}
+                                        className="bg-charcoal text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-stone-800 transition-colors shadow-sm w-3/4 text-center"
+                                        download
+                                    >
+                                        3D Print (.STL)
                                     </a>
                                 )}
                             </div>

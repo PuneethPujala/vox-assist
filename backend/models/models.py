@@ -30,6 +30,7 @@ class DesignBase(BaseModel):
     layout_data: Optional[Dict[str, Any]] = None
     image_url: Optional[str] = None
     model_url: Optional[str] = None
+    stl_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     model_config = {

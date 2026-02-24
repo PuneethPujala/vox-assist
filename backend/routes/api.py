@@ -27,6 +27,7 @@ async def process_generation_job(job_id: str, prompt: str, uid: str):
             "layout_data": result["layout"],
             "spec_data": result["spec"],
             "model_url": result.get("model_url"),
+            "stl_url": result.get("stl_url"),
             "score": result.get("score", 0),
             "stats": result.get("stats", {}),
             "created_at": datetime.utcnow(),

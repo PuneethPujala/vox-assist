@@ -141,6 +141,7 @@ const Create = () => {
     const [loading, setLoading] = useState(false);
     const [generationStatus, setGenerationStatus] = useState(''); // Simulated SSE
     const [modelUrl, setModelUrl] = useState(null);
+    const [stlUrl, setStlUrl] = useState(null);
     const [layoutSpec, setLayoutSpec] = useState(null);
     const [layoutData, setLayoutData] = useState(null);
     const [score, setScore] = useState(0);
@@ -257,6 +258,7 @@ const Create = () => {
         setCandidates([]);
         setSelectedCandidateId(null);
         setModelUrl(null);
+        setStlUrl(null);
         setLayoutSpec(null);
         setLayoutData(null);
 
@@ -322,6 +324,7 @@ const Create = () => {
     const handleSelectCandidate = (candidate) => {
         setSelectedCandidateId(candidate.id);
         setModelUrl(`${import.meta.env.VITE_API_URL}${candidate.model_url}`);
+        setStlUrl(candidate.stl_url ? `${import.meta.env.VITE_API_URL}${candidate.stl_url}` : null);
         setLayoutSpec(candidate.spec);
         setLayoutData(candidate.layout.rooms);
         setScore(candidate.score);
@@ -332,6 +335,7 @@ const Create = () => {
         setStep(1);
         setCandidates([]);
         setModelUrl(null);
+        setStlUrl(null);
     };
 
     const hoveredPoly = hoveredRoomId && layoutData ? layoutData[hoveredRoomId] : null;
@@ -648,13 +652,24 @@ const Create = () => {
                                         ))}
                                     </div>
                                 </div>
-                                <a
-                                    href={modelUrl}
-                                    download
-                                    className="mt-6 flex items-center justify-center p-3 border border-stone-200 rounded-xl text-sm text-charcoal hover:bg-stone-50 transition-colors w-full"
-                                >
-                                    <Download size={16} className="mr-2" /> Download .PLY Model
-                                </a>
+                                <div className="flex flex-col gap-2 mt-6">
+                                    <a
+                                        href={modelUrl}
+                                        download
+                                        className="flex items-center justify-center p-3 border border-stone-200 rounded-xl text-sm text-charcoal hover:bg-stone-50 transition-colors w-full"
+                                    >
+                                        <Download size={16} className="mr-2" /> Download .PLY (Web)
+                                    </a>
+                                    {stlUrl && (
+                                        <a
+                                            href={stlUrl}
+                                            download
+                                            className="flex items-center justify-center p-3 bg-charcoal text-white border border-stone-800 rounded-xl text-sm shadow-md hover:bg-stone-800 transition-colors w-full"
+                                        >
+                                            <Download size={16} className="mr-2" /> Export .STL for 3D Print
+                                        </a>
+                                    )}
+                                </div>
                             </div>
                         </motion.div>
                     )}
