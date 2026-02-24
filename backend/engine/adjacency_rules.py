@@ -27,10 +27,9 @@ ADJACENCY_RULES = {
             "balcony": 4,      # Direct access to balcony
         },
         "avoid": {
-            # Living should NEVER directly touch service rooms
+            # Living should rarely connect to utility
             "storage": True,
             "utility": True,
-            "bathroom": True,  # ⚠️ CRITICAL: No direct living-bathroom connection
         }
     },
     

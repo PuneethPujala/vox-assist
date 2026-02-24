@@ -204,8 +204,11 @@ class ProximityLayoutGenerator:
                 pre_text = original_text[max(0, m['start']-30):m['start']]
                 is_ref = bool(connection_pattern.search(pre_text))
                 
+                # Penalize assigning a number to a room that was mentioned previously (backward parsing)
+                dist_penalty = 0 if is_before else 20
+                
                 if dist < 60:
-                    candidates.append((dist, i, is_ref, is_before))
+                    candidates.append((dist + dist_penalty, i, is_ref, is_before))
             
             # Sort by distance
             candidates.sort(key=lambda x: x[0])

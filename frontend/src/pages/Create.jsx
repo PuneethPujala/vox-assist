@@ -1,13 +1,24 @@
-import React, { useState, Suspense, useEffect } from 'react';
+import React, { useState, useRef, Suspense, useEffect } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
-import { OrbitControls, Center, Grid, Html } from '@react-three/drei';
+import { OrbitControls, Center, Grid, Html, GizmoHelper } from '@react-three/drei';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader';
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
-import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Printer, Box } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+
+// Bridge component to expose Three.js scene and renderer to parent via refs
+const SceneExporter = ({ sceneRef, glRef }) => {
+    const { scene, gl } = useThree();
+    useEffect(() => {
+        sceneRef.current = scene;
+        if (glRef) glRef.current = gl;
+    }, [scene, gl, sceneRef, glRef]);
+    return null;
+};
 
 const Model = ({ url }) => {
     const geometry = useLoader(PLYLoader, url);
@@ -149,6 +160,64 @@ const Create = () => {
     const [hoveredRoomId, setHoveredRoomId] = useState(null);
     const [candidates, setCandidates] = useState([]);
     const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+    const sceneRef = useRef();
+    const glRef = useRef();
+    const fullLayoutRef = useRef(null);
+
+    // --- EXPORT HANDLERS ---
+    const handleExportSTL = () => {
+        if (!sceneRef.current) return;
+        const exporter = new STLExporter();
+        const stlString = exporter.parse(sceneRef.current);
+        const blob = new Blob([stlString], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'voxassist_layout.stl';
+        link.click();
+        URL.revokeObjectURL(link.href);
+    };
+
+    const handleDownloadBlueprint = async () => {
+        if (!glRef.current || !layoutSpec) return;
+        try {
+            // Capture 3D Canvas screenshot
+            const renderer = glRef.current;
+            const screenshot = renderer.domElement.toDataURL('image/png');
+
+            // Build room summary for the PDF
+            const roomSummary = layoutSpec.rooms.map(r => ({
+                name: r.type,
+                area_sqft: Math.round(r.area),
+                area_sqm: Math.round(r.area / 10.7639),
+                color: r.color
+            }));
+
+            const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const token = await currentUser?.getIdToken();
+            const res = await axios.post(
+                `${API_URL}/api/v1/blueprint`,
+                {
+                    layout_data: fullLayoutRef.current,
+                    screenshot_base64: screenshot,
+                    room_summary: roomSummary,
+                    score: score,
+                    prompt: compiledPrompt
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    responseType: 'blob'
+                }
+            );
+            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'voxassist_blueprint.pdf';
+            link.click();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Blueprint download failed:', err);
+        }
+    };
 
     // Derived compiled prompt
     const compiledPrompt = inputMode === 'text'
@@ -324,6 +393,7 @@ const Create = () => {
         setModelUrl(`${import.meta.env.VITE_API_URL}${candidate.model_url}`);
         setLayoutSpec(candidate.spec);
         setLayoutData(candidate.layout.rooms);
+        fullLayoutRef.current = candidate.layout;
         setScore(candidate.score);
         setStats(candidate.stats);
     };
@@ -332,6 +402,7 @@ const Create = () => {
         setStep(1);
         setCandidates([]);
         setModelUrl(null);
+        fullLayoutRef.current = null;
     };
 
     const hoveredPoly = hoveredRoomId && layoutData ? layoutData[hoveredRoomId] : null;
@@ -648,13 +719,20 @@ const Create = () => {
                                         ))}
                                     </div>
                                 </div>
-                                <a
-                                    href={modelUrl}
-                                    download
-                                    className="mt-6 flex items-center justify-center p-3 border border-stone-200 rounded-xl text-sm text-charcoal hover:bg-stone-50 transition-colors w-full"
-                                >
-                                    <Download size={16} className="mr-2" /> Download .PLY Model
-                                </a>
+                                <div className="mt-6 flex flex-col gap-2">
+                                    <button
+                                        onClick={handleDownloadBlueprint}
+                                        className="flex items-center justify-center p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800 hover:bg-blue-100 transition-colors w-full"
+                                    >
+                                        <Printer size={16} className="mr-2" /> Download 2D Blueprint (.PDF)
+                                    </button>
+                                    <button
+                                        onClick={handleExportSTL}
+                                        className="flex items-center justify-center p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 hover:bg-amber-100 transition-colors w-full"
+                                    >
+                                        <Box size={16} className="mr-2" /> Download 3D Print (.STL)
+                                    </button>
+                                </div>
                             </div>
                         </motion.div>
                     )}
@@ -674,7 +752,8 @@ const Create = () => {
                     </div>
                 )}
 
-                <Canvas camera={{ position: [20, 30, 20], fov: 45, far: 10000 }}>
+                <Canvas camera={{ position: [20, 30, 20], fov: 45, far: 10000 }} gl={{ preserveDrawingBuffer: true }}>
+                    <SceneExporter sceneRef={sceneRef} glRef={glRef} />
                     <fog attach="fog" args={['#f5f5f4', 50, 10000]} />
                     <ambientLight intensity={0.5} />
                     <directionalLight position={[10, 20, 10]} intensity={1.5} />
@@ -698,7 +777,9 @@ const Create = () => {
                         </Center>
                     </Suspense>
                     <OrbitControls makeDefault />
-                    <axesHelper args={[5]} position={[0, 0.01, 0]} />
+                    <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
+                        <axesHelper args={[4]} />
+                    </GizmoHelper>
                 </Canvas>
 
                 {/* Overlays */}
