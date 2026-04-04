@@ -21,6 +21,7 @@ graph TD;
 - **Prompt to Floorplan**: Type in spatial requirements, get structured room definitions via a local LLM-powered pipeline (Ollama).
 - **Custom ML Engine**: Utilizes the `vox-architect` model for high-fidelity architectural layout parsing and adjacency reasoning.
 - **3D Visualization**: Immediate structural parsing of 2D plans into robust 3D meshes rendered via React Three Fiber.
+- **Keep-Alive Mechanism**: Integrated GitHub Actions pinger to prevent backend spin-down on Render free-tier hosting.
 - **Real-time UX**: Clean interfaces built with Radix and Shadcn Primitives featuring fluid Dark Mode switching.
 - **Freemium Metering**: Users receive 5 free layout generations. Upgrade via Stripe to unlock unlimited orchestration. 
 
