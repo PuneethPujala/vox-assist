@@ -76,6 +76,10 @@ async def shutdown_db_client():
 def read_root():
     return {"message": "Welcome to VOX-ASSIST API"}
 
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "vox-assist-backend"}
+
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
 # Force reload trigger 30
