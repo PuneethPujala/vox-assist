@@ -14,7 +14,8 @@ class ProximityLayoutGenerator:
     def __init__(self):
         self.room_types = [
             'living', 'bedroom', 'kitchen', 'bathroom', 
-            'balcony', 'storage', 'garden', 'parking', 'study', 'dining', 'hallway'
+            'balcony', 'storage', 'garden', 'parking', 'study', 'dining', 'hallway',
+            'meditation', 'gym', 'yoga'
         ]
         
         self.synonym_map = {
@@ -30,7 +31,10 @@ class ProximityLayoutGenerator:
             'garden':   ['garden', 'lawn', 'yard', 'green'],
             'parking':  ['parking', 'garage', 'carport'],
             'study':    ['study', 'study room', 'office', 'home office', 'library', 'workspace'],
-            'hallway':  ['hallway', 'corridor', 'passage', 'circulation']
+            'hallway':  ['hallway', 'corridor', 'passage', 'circulation'],
+            'meditation': ['meditation', 'meditation room', 'prayer', 'zen', 'quiet'],
+            'gym':      ['gym', 'fitness', 'workout', 'exercise', 'training'],
+            'yoga':     ['yoga', 'stretch', 'studio']
         }
 
         # Rule 18: qualifier words that signal a distinct room instance
@@ -55,7 +59,8 @@ class ProximityLayoutGenerator:
         self.min_areas = {
             'bedroom': 10, 'kitchen': 8, 'bathroom': 5,
             'living': 16, 'storage': 4, 'balcony': 5, 'garden': 5,
-            'study': 6, 'dining': 9, 'hallway': 4
+            'study': 6, 'dining': 9, 'hallway': 4,
+            'meditation': 8, 'gym': 12, 'yoga': 10
         }
 
         # Will hold metadata from the last parsed prompt
@@ -674,11 +679,12 @@ class ProximityLayoutGenerator:
             "  - \"adjacency_prefer\": List of pairs of room types to be close.\n"
             "  - \"adjacency_avoid\": List of pairs of room types to be far.\n\n"
             "Rules:\n"
-            "1. Canonical types: living, bedroom, kitchen, bathroom, balcony, storage, study, dining, hallway, garden, parking.\n"
+            "1. Canonical types: living, bedroom, kitchen, bathroom, balcony, storage, study, dining, hallway, garden, parking, meditation, gym, yoga.\n"
             "2. If the user asks for '2 bedrooms', output TWO separate 'bedroom' objects in the list.\n"
             "3. If areas are in sqft, convert to sqm (val * 0.092903).\n"
-            "4. Be thorough: extract EVERY room mentioned (e.g. guest bedroom, master bed, study, balcony).\n"
-            "5. Return ONLY JSON."
+            "4. Be thorough: extract EVERY room mentioned (e.g. guest bedroom, master bed, study, balcony, meditation).\n"
+            "5. If a 'home' or 'house' is requested but most standard rooms are missing, INFER them (e.g. at least one living, bedroom, kitchen, and bathroom).\n"
+            "6. Return ONLY JSON."
         )
 
         payload = {
@@ -743,6 +749,46 @@ class ProximityLayoutGenerator:
 
     # ────────────────────────────────────────────────────────────────────────────────
 
+    def _generate_default_home_layout(self, total_area: float, existing_rooms: List[Dict]) -> List[Dict]:
+        """
+        If a 'home' is implied but key rooms (living, bedroom, kitchen, bath) are missing,
+        add them as a fallback to ensure we don't just return a single box.
+        """
+        print("[Fallback] Expanding with standard home rooms...")
+        
+        # Track what we already have
+        has_types = {r['type'] for r in existing_rooms}
+        new_rooms = list(existing_rooms)
+        
+        # Standard 1BHK minimal requirements
+        essential_ratios = {
+            'living': 0.30,
+            'bedroom': 0.25,
+            'kitchen': 0.15,
+            'bathroom': 0.10
+        }
+        
+        # Sum up used area
+        used_area = sum(r['area'] for r in new_rooms)
+        remaining = total_area - used_area
+        
+        # If we have almost no area left, we can't add much, but we'll try to shrink
+        # existing rooms or just allocate from the total if it was very empty.
+        target_pool = remaining if remaining > (total_area * 0.5) else total_area
+        
+        for rtype, ratio in essential_ratios.items():
+            if rtype not in has_types:
+                area = max(self.min_areas.get(rtype, 10), target_pool * ratio)
+                new_rooms.append({
+                    'type': rtype,
+                    'area': area,
+                    'instance': 1,
+                    'name': rtype,
+                    'auto': True
+                })
+        
+        return new_rooms
+
     def generate_blueprint(self, prompt: str) -> List[Dict[str, any]]:
         print(f"\n--- PROMPT: \"{prompt}\" ---")
         
@@ -782,6 +828,13 @@ class ProximityLayoutGenerator:
                     used_area = sum(r['area'] for r in room_list)
                 else:
                     total_area, room_list, used_area, excluded_types = self.parse_natural_language(prompt)
+
+        # Smart Fallback: If we have very few rooms and it's a "home" or "house", 
+        # expand with standard essentials so we don't return an empty box.
+        home_keywords = ['home', 'house', 'apartment', 'villa', 'bungalow', 'residence', 'layout', 'floorplan']
+        if len(room_list) <= 1 and any(k in prompt.lower() for k in home_keywords):
+            room_list = self._generate_default_home_layout(total_area, room_list)
+            used_area = sum(r['area'] for r in room_list)
         
         # Expose basic metadata
         self.last_metadata = {
