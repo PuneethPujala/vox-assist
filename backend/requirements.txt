@@ -137,3 +137,5 @@ widgetsnbextension==4.0.15
 zipp==3.23.0
 
 ollama
+
+slowapi
