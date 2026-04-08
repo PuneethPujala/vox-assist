@@ -1,3 +1,4 @@
+import torch  # Pre-load torch at module level to prevent DLL init failure on Windows
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from backend.routes import api, user
@@ -22,11 +23,29 @@ async def lifespan(app: FastAPI):
     # Offload slow index creation to background
     import asyncio
     asyncio.create_task(create_database_indexes())
-    
+
+    # Load Whisper in a thread — avoids Windows DLL/asyncio conflict
+    try:
+        print("[STARTUP] 🎙️  Loading Whisper model (base.en) in background thread...")
+        import whisper
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            app.state.whisper_model = await loop.run_in_executor(
+                pool, lambda: whisper.load_model("base.en")
+            )
+        print("[STARTUP] ✅  Whisper model loaded successfully.")
+    except Exception as e:
+        print(f"[STARTUP] ❌  ERROR — Failed to load Whisper model: {str(e)}")
+        print("[STARTUP] ⚠️  Voice transcription will fallback to per-request loading.")
+        app.state.whisper_model = None
+
     yield
     
     # Shutdown
     await close_mongo_connection()
+    print("[SHUTDOWN] 🛑  Whisper model released from memory.")
+# --- Everything below is unchanged ---
 
 app = FastAPI(
     title="VoxAssist Backend Core",
@@ -53,8 +72,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"success": False, "error": str(exc), "message": "Internal Server Error"}
     )
 
-# Helper to load env for CORS
-# For now, allowing all for development
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
@@ -71,17 +88,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi.staticfiles import StaticFiles
-
 app.include_router(api.router, prefix="/api/v1")
 app.include_router(user.router, prefix="/api/v1")
 
-# Mount static files
-# Mount static files (for 3D models, etc.)
 os.makedirs("backend/static/models", exist_ok=True)
 app.mount("/static", StaticFiles(directory="backend/static"), name="static")
-
-# Lifespan handles startup/shutdown now
 
 @app.get("/")
 def read_root():
@@ -93,4 +104,3 @@ def health_check():
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
-# Force reload trigger 30

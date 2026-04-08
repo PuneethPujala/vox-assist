@@ -6,7 +6,7 @@ import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
-import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Printer, Box, Link2 } from 'lucide-react';
+import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Printer, Box, Link2, Mic, MicOff, Loader } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -201,6 +201,13 @@ const Create = () => {
 
     const [adjacencyPairs, setAdjacencyPairs] = useState([]);
 
+    // Voice recording state
+    const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [voiceError, setVoiceError] = useState('');
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+
     // Generation State
     const [loading, setLoading] = useState(false);
     const [generationStatus, setGenerationStatus] = useState(''); // Simulated SSE
@@ -346,6 +353,107 @@ const Create = () => {
         setUnit(toUnit);
         if (inputMode === 'text' && textPrompt.trim()) {
             setTextPrompt(prev => convertPromptUnits(prev, fromUnit, toUnit));
+        }
+    };
+
+    const handleVoiceRecord = async () => {
+        // If already recording — stop
+        if (isRecording) {
+            console.log("[VOICE] 🛑 Stopping recording...");
+            mediaRecorderRef.current?.stop();
+            setIsRecording(false);
+            return;
+        }
+
+        // Reset state
+        setVoiceError('');
+        audioChunksRef.current = [];
+
+        // Request mic permission
+        try {
+            console.log("[VOICE] 🎙️ Requesting microphone access...");
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log("[VOICE] ✅ Microphone access granted.");
+
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+
+            // Collect audio chunks as they come in
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    audioChunksRef.current.push(e.data);
+                    console.log(`[VOICE] 📦 Audio chunk received: ${e.data.size} bytes`);
+                }
+            };
+
+            // When recording stops — send to backend
+            mediaRecorder.onstop = async () => {
+                console.log("[VOICE] 🔄 Recording stopped. Preparing audio blob...");
+
+                // Stop all mic tracks to release mic
+                stream.getTracks().forEach(track => track.stop());
+
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                console.log(`[VOICE] 📤 Sending audio to backend. Total size: ${audioBlob.size} bytes`);
+
+                if (audioBlob.size === 0) {
+                    console.error("[VOICE] ❌ Audio blob is empty — nothing was recorded.");
+                    setVoiceError("No audio recorded. Please try again.");
+                    setIsTranscribing(false);
+                    return;
+                }
+
+                setIsTranscribing(true);
+
+                try {
+                    const token = await currentUser?.getIdToken();
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'recording.webm');
+
+                    console.log("[VOICE] 📡 Sending request to /api/v1/voice-transcribe...");
+                    const response = await axios.post(
+                        `${import.meta.env.VITE_API_URL}/api/v1/voice-transcribe`,
+                        formData,
+                        {
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                                'Content-Type': 'multipart/form-data'
+                            }
+                        }
+                    );
+
+                    console.log("[VOICE] ✅ Response received:", response.data);
+
+                    if (response.data.success && response.data.text) {
+                        setTextPrompt(response.data.text);
+                        console.log("[VOICE] 📝 Text prompt populated:", response.data.text);
+                    } else {
+                        console.warn("[VOICE] ⚠️ Transcription returned empty.");
+                        setVoiceError(response.data.message || "No speech detected. Please try again.");
+                    }
+
+
+                } catch (err) {
+                    console.error("[VOICE] ❌ ERROR — Request to backend failed:", err);
+                    setVoiceError("Transcription failed. Please check your connection and try again.");
+                } finally {
+                    setIsTranscribing(false);
+                    console.log("[VOICE] 🏁 Transcription flow complete.");
+                }
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            console.log("[VOICE] 🔴 Recording started.");
+
+        } catch (err) {
+            if (err.name === 'NotAllowedError') {
+                console.error("[VOICE] ❌ ERROR — Microphone permission denied by user.");
+                setVoiceError("Microphone access denied. Please allow mic access in your browser.");
+            } else {
+                console.error("[VOICE] ❌ ERROR — Could not start recording:", err);
+                setVoiceError("Could not access microphone. Please try again.");
+            }
         }
     };
 
@@ -748,22 +856,60 @@ const Create = () => {
                             ) : (
                                 <div className="mb-6">
                                     <div className="flex justify-between items-end mb-2">
-                                        <p className="text-sm text-stone-500">Describe the rooms and dimensions you want conversationally.</p>
-                                        <button
-                                            onClick={handleUnitToggle}
-                                            className="text-xs bg-stone-200 text-stone-600 px-2 py-0.5 rounded font-mono hover:bg-stone-300 whitespace-nowrap"
-                                        >
-                                            {unit === 'ft' ? 'Switch to Meters' : 'Switch to Feet'}
-                                        </button>
-                                    </div>
-                                    <textarea
-                                        value={textPrompt}
-                                        onChange={(e) => setTextPrompt(e.target.value)}
-                                        placeholder={`E.g., I want a 1000 sq${unit} house with a 300 sq${unit} living room, a 150 sq${unit} bedroom...`}
-                                        className="w-full p-4 rounded-xl border border-stone-200 focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none resize-none h-48 text-stone-700 bg-stone-50"
-                                    />
-                                    <p className="text-[11px] text-stone-400 mt-1">Tip: you can type adjacency hints like "Bedroom adjacent to Study".</p>
+                                    <p className="text-sm text-stone-500">Describe the rooms and dimensions you want conversationally.</p>
+                                    <button
+                                        onClick={handleUnitToggle}
+                                        className="text-xs bg-stone-200 text-stone-600 px-2 py-0.5 rounded font-mono hover:bg-stone-300 whitespace-nowrap"
+                                    >
+                                        {unit === 'ft' ? 'Switch to Meters' : 'Switch to Feet'}
+                                    </button>
                                 </div>
+                                <textarea
+                                    value={textPrompt}
+                                    onChange={(e) => setTextPrompt(e.target.value)}
+                                    placeholder={`E.g., I want a 1000 sq${unit} house with a 300 sq${unit} living room, a 150 sq${unit} bedroom...`}
+                                    className="w-full p-4 rounded-xl border border-stone-200 focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none resize-none h-36 text-stone-700 bg-stone-50"
+                                />
+
+                                {/* Voice Button */}
+                                <div className="flex flex-col items-center mt-3">
+                                    <button
+                                        onClick={handleVoiceRecord}
+                                        disabled={isTranscribing}
+                                        className={`
+                                            w-14 h-14 rounded-full flex items-center justify-center shadow-md transition-all duration-200
+                                            ${isRecording
+                                                ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+                                                : isTranscribing
+                                                    ? 'bg-stone-300 cursor-not-allowed'
+                                                    : 'bg-charcoal hover:bg-stone-700'
+                                            }
+                                       `}
+                                    >
+                                        {isTranscribing
+                                            ? <Loader size={22} className="text-white animate-spin" />
+                                            : isRecording
+                                                ? <MicOff size={22} className="text-white" />
+                                                : <Mic size={22} className="text-white" />
+                                        }
+                                    </button>
+                                    <p className="text-[11px] text-stone-400 mt-2">
+                                        {isTranscribing
+                                            ? 'Transcribing...'
+                                            : isRecording
+                                                ? 'Recording — click to stop'
+                                                : 'Click to speak your prompt'
+                                        }
+                                    </p>
+
+                                    {/* Voice error message */}
+                                    {voiceError && (
+                                        <p className="text-[11px] text-red-500 mt-1 text-center">{voiceError}</p>
+                                    )}
+                                </div>
+
+                                <p className="text-[11px] text-stone-400 mt-3">Tip: you can type adjacency hints like "Bedroom adjacent to Study".</p>
+                            </div>
                             )}
 
                             {validationError && (

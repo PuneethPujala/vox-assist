@@ -6,9 +6,11 @@ from backend.utils.auth_utils import get_current_user_uid
 from backend.utils.rate_limit import limiter
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request, UploadFile, File
 import logging
 from pydantic import BaseModel
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +76,6 @@ async def generate_layout(
     background_tasks: BackgroundTasks,
     uid: str = Depends(get_current_user_uid)
 ):
-    """
-    Queue a layout generation job.
-    """
     db = get_database()
 
     job_doc = {
@@ -107,14 +106,10 @@ async def get_job_status(job_id: str, uid: str = Depends(get_current_user_uid)):
 
 @router.get("/designs", response_model=List[dict])
 async def get_all_designs(limit: int = 10):
-    """
-    Get generic designs for the Explore page. Limited to 10 latest.
-    """
     db = get_database()
     cursor = db.designs.find({"is_deleted": {"$ne": True}}).sort("created_at", -1).limit(limit)
     designs = await cursor.to_list(length=limit)
     
-    # Convert ObjectId
     for d in designs:
         d["_id"] = str(d["_id"])
         
@@ -122,10 +117,6 @@ async def get_all_designs(limit: int = 10):
 
 @router.get("/my-designs", response_model=List[dict])
 async def get_my_designs(uid: str = Depends(get_current_user_uid)):
-    """
-    Get designs for the current user.
-    Returns UNIQUE prompts only (latest version), limited to 30.
-    """
     db = get_database()
     
     pipeline = [
@@ -206,9 +197,6 @@ def health_check():
 
 @router.post("/blueprint")
 async def generate_blueprint(request: Request):
-    """
-    Generate a professional branded PDF with 3D screenshot and 2D floorplan.
-    """
     import tempfile
     import io
     import base64
@@ -231,7 +219,6 @@ async def generate_blueprint(request: Request):
     score = body.get("score", 0)
     prompt = body.get("prompt", "")
 
-    # ── Decode 3D screenshot ──
     screenshot_img = None
     if screenshot_b64 and "," in screenshot_b64:
         try:
@@ -241,7 +228,6 @@ async def generate_blueprint(request: Request):
             logging.warning(f"Failed to decode screenshot: {e}")
             pass
 
-    # ── Reconstruct room polygons for 2D floorplan ──
     rooms = {}
     if layout_data and isinstance(layout_data, dict) and "rooms" in layout_data:
         for room_name, geojson_dict in layout_data["rooms"].items():
@@ -261,7 +247,6 @@ async def generate_blueprint(request: Request):
                 logging.warning(f"Failed to reconstruct room {room_name}: {e}")
                 continue
 
-    # Reconstruct doors
     doors = None
     if layout_data and layout_data.get("doors"):
         try:
@@ -301,42 +286,29 @@ async def generate_blueprint(request: Request):
             logging.warning(f"Failed to reconstruct entrance: {e}")
             entrance = None
 
-    # ── Compose branded PDF ──
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
         with PdfPages(tmp_path) as pdf:
-
-            # ═══════════════════════════════════════
-            # PAGE 1: Header + 3D Screenshot + Room Table
-            # ═══════════════════════════════════════
-            fig = plt.figure(figsize=(11.69, 16.54), facecolor='white')  # A3
-
-            # ── Styled Logo: bold "VOX" + light "ASSIST" ──
+            fig = plt.figure(figsize=(11.69, 16.54), facecolor='white')
             fig.text(0.465, 0.965, 'VOX', fontsize=40, fontweight='black',
-                     ha='right', va='top', color='#1a1a2e',
-                     fontfamily='sans-serif')
+                     ha='right', va='top', color='#1a1a2e', fontfamily='sans-serif')
             fig.text(0.47, 0.965, 'ASSIST', fontsize=40, fontweight='light',
-                     ha='left', va='top', color='#9ca3af',
-                     fontfamily='sans-serif')
+                     ha='left', va='top', color='#9ca3af', fontfamily='sans-serif')
             fig.text(0.5, 0.94, 'AI-Generated Architectural Layout',
-                     fontsize=12, ha='center', va='top', color='#6b7280',
-                     fontstyle='italic')
+                     fontsize=12, ha='center', va='top', color='#6b7280', fontstyle='italic')
 
-            # Thin separator line
             line_ax = fig.add_axes([0.08, 0.93, 0.84, 0.001])
             line_ax.axhline(0, color='#d1d5db', linewidth=2)
             line_ax.axis('off')
 
-            # ── Meta info (fixed Y positions with room for prompt) ──
             now = datetime.now().strftime("%B %d, %Y  •  %I:%M %p")
             meta_y = 0.92
             fig.text(0.08, meta_y, f'Generated: {now}', fontsize=9, color='#9ca3af')
             fig.text(0.92, meta_y, f'Score: {round(score * 100) if score < 1 else round(score)}%',
                      fontsize=12, fontweight='bold', ha='right', color='#10b981')
 
-            # Prompt - wrap long text to 2 lines max
             prompt_y = meta_y - 0.018
             if prompt:
                 max_chars = 90
@@ -346,33 +318,27 @@ async def generate_blueprint(request: Request):
                     line2 = line2[:max_chars - 3] + '...'
                 display_prompt = line1 + ('\n' + line2 if line2 else '')
                 fig.text(0.08, prompt_y, f'"{display_prompt}"',
-                         fontsize=8, color='#6b7280', fontstyle='italic',
-                         verticalalignment='top')
+                         fontsize=8, color='#6b7280', fontstyle='italic', verticalalignment='top')
 
-            # ── 3D Screenshot (LARGER - takes up ~50% of page) ──
-            screenshot_bottom = 0.38  # Bottom of screenshot area
+            screenshot_bottom = 0.38
             if screenshot_img is not None:
                 ax_3d = fig.add_axes([0.04, screenshot_bottom, 0.92, 0.50])
                 ax_3d.imshow(screenshot_img)
                 ax_3d.axis('off')
-                # Subtle border
                 for spine in ax_3d.spines.values():
                     spine.set_visible(True)
                     spine.set_color('#e5e7eb')
                     spine.set_linewidth(1.5)
 
-            # ── Room Details Table ──
             if room_summary:
                 table_top = screenshot_bottom - 0.02
                 fig.text(0.5, table_top, 'ROOM SPECIFICATIONS',
-                         fontsize=12, fontweight='bold', ha='center',
-                         color='#374151', va='top')
+                         fontsize=12, fontweight='bold', ha='center', color='#374151', va='top')
 
                 table_area_top = table_top - 0.025
                 ax_table = fig.add_axes([0.1, 0.05, 0.8, table_area_top - 0.05])
                 ax_table.axis('off')
 
-                # Table data
                 cols = ['Room', 'Area (sqft)', 'Area (sqm)']
                 col_widths = [0.5, 0.25, 0.25]
 
@@ -384,7 +350,6 @@ async def generate_blueprint(request: Request):
                         str(r.get('area_sqm', '-'))
                     ])
 
-                # Total row
                 total_sqft = sum(r.get('area_sqft', 0) for r in room_summary)
                 total_sqm = sum(r.get('area_sqm', 0) for r in room_summary)
                 table_data.append(['  TOTAL', str(total_sqft), str(total_sqm)])
@@ -400,45 +365,37 @@ async def generate_blueprint(request: Request):
                 table.set_fontsize(10)
                 table.scale(1, 1.8)
 
-                # Style header row
                 for j in range(len(cols)):
                     cell = table[0, j]
                     cell.set_facecolor('#1a1a2e')
                     cell.set_text_props(color='white', fontweight='bold')
                     cell.set_edgecolor('#1a1a2e')
 
-                # Style data rows
                 for i in range(len(table_data)):
                     for j in range(len(cols)):
                         cell = table[i + 1, j]
                         cell.set_edgecolor('#e5e7eb')
                         if i % 2 == 0:
                             cell.set_facecolor('#f9fafb')
-                        if i == len(table_data) - 1:  # Total row
+                        if i == len(table_data) - 1:
                             cell.set_facecolor('#f3f4f6')
                             cell.set_text_props(fontweight='bold')
 
-                # First column left-align
                 for i in range(len(table_data) + 1):
                     table[i, 0].set_text_props(ha='left')
 
-            # Footer
             fig.text(0.5, 0.015, 'Generated by VOX ASSIST  •  voxassist.com',
                      fontsize=8, ha='center', color='#9ca3af')
 
             pdf.savefig(fig)
             plt.close(fig)
 
-            # ═══════════════════════════════════════
-            # PAGE 2: 2D Floorplan (if rooms available)
-            # ═══════════════════════════════════════
             if rooms:
                 engine_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "engine")
                 if engine_dir not in sys.path:
                     sys.path.insert(0, engine_dir)
                 from floorplan_2d_visualizer import draw_2d_floorplan
 
-                # Generate 2D floorplan to a temp PNG, then embed in PDF page
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fp_tmp:
                     fp_path = fp_tmp.name
 
@@ -481,6 +438,8 @@ async def generate_blueprint(request: Request):
         with open(tmp_path, "rb") as f:
             pdf_bytes = f.read()
 
+        from fastapi.responses import StreamingResponse
+        import io
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
@@ -489,3 +448,67 @@ async def generate_blueprint(request: Request):
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# ─────────────────────────────────────────────
+# VOICE TRANSCRIPTION ENDPOINT
+# ─────────────────────────────────────────────
+
+@router.post("/voice-transcribe", response_model=dict)
+async def voice_transcribe(
+    request: Request,
+    audio: UploadFile = File(...),
+    uid: str = Depends(get_current_user_uid)
+):
+    """
+    Accepts an audio file from the frontend mic recording,
+    transcribes it using Whisper, and returns the text.
+    """
+    print(f"[VOICE-ROUTE] 📥  Received audio file: {audio.filename}, type: {audio.content_type}, user: {uid}")
+
+    # Check file is present
+    if not audio:
+        print("[VOICE-ROUTE] ❌  ERROR — No audio file received in request.")
+        raise HTTPException(status_code=400, detail="No audio file provided.")
+
+    # Get pre-loaded Whisper model from app state
+    whisper_model = getattr(request.app.state, "whisper_model", None)
+    if whisper_model is None:
+        print("[VOICE-ROUTE] ⚠️  WARNING — Whisper model not found in app state. Will load fresh (slow).")
+    else:
+        print("[VOICE-ROUTE] ✅  Whisper model found in app state. Using pre-loaded model.")
+
+    # Save uploaded audio to a temp file
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
+            contents = await audio.read()
+            tmp.write(contents)
+            tmp_path = tmp.name
+        print(f"[VOICE-ROUTE] 💾  Audio saved to temp file: {tmp_path}")
+
+    except Exception as e:
+        print(f"[VOICE-ROUTE] ❌  ERROR — Failed to save audio to temp file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to process audio file.")
+
+    # Transcribe
+    try:
+        from backend.engine.voice_text import transcribe_audio
+        text = transcribe_audio(tmp_path, model=whisper_model)
+
+        if not text:
+            print("[VOICE-ROUTE] ⚠️  Transcription returned empty — sending empty response to frontend.")
+            return {"success": False, "text": "", "message": "No speech detected. Please try again."}
+
+        print(f"[VOICE-ROUTE] ✅  Transcription complete. Returning text to frontend.")
+        return {"success": True, "text": text}
+
+    except Exception as e:
+        print(f"[VOICE-ROUTE] ❌  ERROR — Transcription step failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+    finally:
+        # Always clean up temp file
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+            print(f"[VOICE-ROUTE] 🧹  Temp file cleaned up: {tmp_path}")
