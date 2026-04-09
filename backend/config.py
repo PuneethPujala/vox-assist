@@ -1,5 +1,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+_ENV_FILE = os.path.join(_BACKEND_DIR, ".env")
 
 class Settings(BaseSettings):
     MONGODB_URL: str = "mongodb://localhost:27017"
@@ -14,7 +17,7 @@ class Settings(BaseSettings):
     MAX_PROMPT_LENGTH: int = 5000
 
     model_config = SettingsConfigDict(
-        env_file=".env",  # 👈 CHANGED
+        env_file=_ENV_FILE,
         extra="ignore"
     )
 

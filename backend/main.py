@@ -1,3 +1,14 @@
+import os
+import sys
+
+# Ensure the backend directory is on sys.path so local imports work
+# regardless of whether uvicorn is invoked from the project root
+# (e.g. Render: `uvicorn backend.main:app`) or from the backend
+# directory (local dev: `uvicorn main:app`).
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
 import torch  # Pre-load torch at module level to prevent DLL init failure on Windows
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
