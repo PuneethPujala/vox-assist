@@ -13,10 +13,23 @@ class Database:
 
 db = Database()
 
+import asyncio
 async def connect_to_mongo():
-    db.client = AsyncIOMotorClient(MONGO_URL)
-    db.db = db.client[DB_NAME]
-    print(f"Connected to MongoDB at {MONGO_URL}")
+    for attempt in range(3):
+        try:
+            db.client = AsyncIOMotorClient(MONGO_URL, serverSelectionTimeoutMS=5000)
+            db.db = db.client[DB_NAME]
+            print(f"Connected to MongoDB at {MONGO_URL}")
+            # Ping db to verify connection
+            await db.client.admin.command('ping')
+            return
+        except Exception as e:
+            print(f"WARNING: MongoDB connection failed on attempt {attempt+1}: {e}")
+            if attempt < 2:
+                await asyncio.sleep(2)
+            else:
+                print("ERROR: MongoDB connection failed after retries.")
+                # We won't raise so the app doesn't crash, but DB ops will fail later
 
 async def create_database_indexes():
     """

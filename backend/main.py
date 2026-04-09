@@ -34,12 +34,15 @@ except AttributeError:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Fast DB connection
-    await connect_to_mongo()
-    
-    # Offload slow index creation to background
     import asyncio
-    asyncio.create_task(create_database_indexes())
+
+    async def init_db():
+        # Complete MongoDB startup in background
+        await connect_to_mongo()
+        await create_database_indexes()
+
+    # Offload DB init to background to prevent blocking Render deployment
+    asyncio.create_task(init_db())
 
     # Load Whisper in a daemon thread so it doesn't block lifespan/Uvicorn startup
     import threading
