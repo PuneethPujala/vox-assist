@@ -41,21 +41,20 @@ async def lifespan(app: FastAPI):
     import asyncio
     asyncio.create_task(create_database_indexes())
 
-    # Load Whisper in a thread — avoids Windows DLL/asyncio conflict
-    try:
-        print("[STARTUP] 🎙️  Loading Whisper model (base.en) in background thread...")
-        import whisper
-        import concurrent.futures
-        loop = asyncio.get_event_loop()
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            app.state.whisper_model = await loop.run_in_executor(
-                pool, lambda: whisper.load_model("base.en")
-            )
-        print("[STARTUP] ✅  Whisper model loaded successfully.")
-    except Exception as e:
-        print(f"[STARTUP] ❌  ERROR — Failed to load Whisper model: {str(e)}")
-        print("[STARTUP] ⚠️  Voice transcription will fallback to per-request loading.")
-        app.state.whisper_model = None
+    # Load Whisper in a daemon thread so it doesn't block lifespan/Uvicorn startup
+    import threading
+    def load_whisper_model():
+        try:
+            print("[STARTUP] 🎙️  Loading Whisper model (base.en) in background thread...")
+            import whisper
+            app.state.whisper_model = whisper.load_model("base.en")
+            print("[STARTUP] ✅  Whisper model loaded successfully.")
+        except Exception as e:
+            print(f"[STARTUP] ❌  ERROR — Failed to load Whisper model: {str(e)}")
+            print("[STARTUP] ⚠️  Voice transcription will fallback to per-request loading.")
+
+    app.state.whisper_model = None
+    threading.Thread(target=load_whisper_model, daemon=True).start()
 
     yield
     
