@@ -14,10 +14,10 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 sys.path.append(root_dir)
 sys.path.append(os.path.join(root_dir, "backend", "engine"))
 
-from backend.engine.text_to_specs_v2 import ProximityLayoutGenerator
-from backend.engine.layout_synthesizer_adjacency import synthesize_layout_from_spec
-from backend.engine.resplan_to_3d import build_house_from_layout
-from backend.engine.scoring_engine import ScoringEngine
+from engine.text_to_specs_v2 import ProximityLayoutGenerator
+from engine.layout_synthesizer_adjacency import synthesize_layout_from_spec
+from engine.resplan_to_3d import build_house_from_layout
+from engine.scoring_engine import ScoringEngine
 # from backend.engine.floorplan_2d_visualizer import draw_2d_floorplan
 
 logger = logging.getLogger(__name__)

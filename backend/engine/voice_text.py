@@ -1,7 +1,13 @@
 import whisper
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+# Ensure ffmpeg.exe from root directory is accessible via PATH
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if root_dir not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = root_dir + os.pathsep + os.environ.get("PATH", "")
 
 def transcribe_audio(file_path: str, model=None) -> str:
     """

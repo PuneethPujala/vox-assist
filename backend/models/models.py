@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from bson import ObjectId
 from enum import Enum
-from backend.config import settings
+from config import settings
 
 class PyObjectId(ObjectId):
     @classmethod

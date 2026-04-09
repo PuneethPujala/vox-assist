@@ -1,5 +1,5 @@
 import math
-from backend.engine.layout_features import extract_layout_features
+from layout_features import extract_layout_features
 
 class ScoringEngine:
     @staticmethod

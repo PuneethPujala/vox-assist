@@ -1,5 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from backend.config import settings
+from config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ async def create_database_indexes():
     """
     Perform index creation in the background to avoid blocking the main server startup.
     """
-    if not db.db:
+    if db.db is None:
         return
 
     # Create Indexes

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     MAX_PROMPT_LENGTH: int = 5000
 
     model_config = SettingsConfigDict(
-        env_file="backend/.env",  # 👈 KEEP IT HERE
+        env_file=".env",  # 👈 CHANGED
         extra="ignore"
     )
 

@@ -1,9 +1,9 @@
-from backend.models.models import DesignBase
+from models.models import DesignBase
 from bson import ObjectId
-from backend.services.generation_service import generation_service
-from backend.database.connection import get_database
-from backend.utils.auth_utils import get_current_user_uid
-from backend.utils.rate_limit import limiter
+from services.generation_service import generation_service
+from database.connection import get_database
+from utils.auth_utils import get_current_user_uid
+from utils.rate_limit import limiter
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request, UploadFile, File
@@ -493,7 +493,7 @@ async def voice_transcribe(
 
     # Transcribe
     try:
-        from backend.engine.voice_text import transcribe_audio
+        from engine.voice_text import transcribe_audio
         text = transcribe_audio(tmp_path, model=whisper_model)
 
         if not text:

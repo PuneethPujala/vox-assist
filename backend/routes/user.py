@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from backend.models.models import UserCreate, UserBase
-from backend.utils.auth_utils import verify_token, get_current_user_uid
-from backend.database.connection import get_database
+from models.models import UserCreate, UserBase
+from utils.auth_utils import verify_token, get_current_user_uid
+from database.connection import get_database
 from typing import Dict, Any
 
 router = APIRouter()

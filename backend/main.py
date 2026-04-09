@@ -1,10 +1,10 @@
 import torch  # Pre-load torch at module level to prevent DLL init failure on Windows
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routes import api, user
-from backend.database.connection import connect_to_mongo, close_mongo_connection, create_database_indexes
-import backend.database.connection
-from backend.utils.rate_limit import limiter
+from routes import api, user
+from database.connection import connect_to_mongo, close_mongo_connection, create_database_indexes
+import database.connection
+from utils.rate_limit import limiter
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -13,7 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import uvicorn
 import os
+import sys
 import logging
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -91,8 +97,8 @@ app.add_middleware(
 app.include_router(api.router, prefix="/api/v1")
 app.include_router(user.router, prefix="/api/v1")
 
-os.makedirs("backend/static/models", exist_ok=True)
-app.mount("/static", StaticFiles(directory="backend/static"), name="static")
+os.makedirs("static/models", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 def read_root():
@@ -103,4 +109,4 @@ def health_check():
     return {"status": "healthy", "service": "vox-assist-backend"}
 
 if __name__ == "__main__":
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
