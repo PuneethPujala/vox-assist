@@ -11,7 +11,7 @@ if root_dir not in os.environ.get("PATH", ""):
 
 def transcribe_audio(file_path: str, model=None) -> str:
     """
-    Transcribes an audio file to text using Whisper base.en model.
+    Transcribes an audio file to text using Whisper tiny.en model.
     Accepts a pre-loaded model for performance. Falls back to loading if not provided.
     Returns transcribed text string, or empty string on failure.
     """
@@ -19,7 +19,7 @@ def transcribe_audio(file_path: str, model=None) -> str:
         if model is None:
             logger.warning("[VOICE] ⚠️  Whisper model not pre-loaded — loading fresh. This will be slow.")
             print("[VOICE] ⚠️  Whisper model not pre-loaded — loading fresh. This will be slow.")
-            model = whisper.load_model("base.en")
+            model = whisper.load_model("tiny.en")
 
         print(f"[VOICE] 🎙️  Starting transcription for file: {file_path}")
         result = model.transcribe(file_path, fp16=False, language='en')

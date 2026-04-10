@@ -48,9 +48,9 @@ async def lifespan(app: FastAPI):
     import threading
     def load_whisper_model():
         try:
-            print("[STARTUP] 🎙️  Loading Whisper model (base.en) in background thread...")
+            print("[STARTUP] 🎙️  Loading Whisper model (tiny.en) in background thread...")
             import whisper
-            app.state.whisper_model = whisper.load_model("base.en")
+            app.state.whisper_model = whisper.load_model("tiny.en")
             print("[STARTUP] ✅  Whisper model loaded successfully.")
         except Exception as e:
             print(f"[STARTUP] ❌  ERROR — Failed to load Whisper model: {str(e)}")
