@@ -47,6 +47,8 @@ const ROOM_OPTION_GROUPS = [
 // Flat list — used for simple value→label lookups
 const ROOM_OPTIONS = ROOM_OPTION_GROUPS.flatMap(g => g.options);
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 function convertPromptUnits(text, fromUnit, toUnit) {
     if (!text || fromUnit === toUnit) return text;
     const factor = fromUnit === 'ft' ? 0.092903 : 10.7639;
@@ -252,7 +254,6 @@ const Create = () => {
                 color: r.color
             }));
 
-            const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const token = await currentUser?.getIdToken();
             const res = await axios.post(
                 `${API_URL}/api/v1/blueprint`,
@@ -412,7 +413,7 @@ const Create = () => {
 
                     console.log("[VOICE] 📡 Sending request to /api/v1/voice-transcribe...");
                     const response = await axios.post(
-                        `${import.meta.env.VITE_API_URL}/api/v1/voice-transcribe`,
+                        `${API_URL}/api/v1/voice-transcribe`,
                         formData,
                         {
                             headers: {
@@ -594,7 +595,7 @@ const Create = () => {
             }
             
             const response = await axios.post(
-                `${import.meta.env.VITE_API_URL}/api/v1/generate`,
+                `${API_URL}/api/v1/generate`,
                 payload,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -605,7 +606,7 @@ const Create = () => {
                 // Poll for completion
                 const pollInterval = setInterval(async () => {
                     try {
-                        const jobRes = await axios.get(`${import.meta.env.VITE_API_URL}/api/v1/jobs/${jobId}`, {
+                        const jobRes = await axios.get(`${API_URL}/api/v1/jobs/${jobId}`, {
                             headers: { Authorization: `Bearer ${token}` }
                         });
 
@@ -644,7 +645,7 @@ const Create = () => {
 
     const handleSelectCandidate = (candidate) => {
         setSelectedCandidateId(candidate.id);
-        setModelUrl(`${import.meta.env.VITE_API_URL}${candidate.model_url}`);
+        setModelUrl(`${API_URL}${candidate.model_url}`);
         setLayoutSpec(candidate.spec);
         setLayoutData(candidate.layout.rooms);
         fullLayoutRef.current = candidate.layout;

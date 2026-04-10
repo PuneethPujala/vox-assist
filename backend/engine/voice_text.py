@@ -1,4 +1,3 @@
-import whisper
 import logging
 import os
 
@@ -21,6 +20,7 @@ def transcribe_audio(file_path: str, model=None) -> str:
     try:
         if model is None:
             if _LAZY_MODEL is None:
+                import whisper
                 logger.warning("[VOICE] ⚠️  Whisper model not pre-loaded — lazy loading now. First request will be slow.")
                 print("[VOICE] ⚠️  Whisper model not pre-loaded — lazy loading now. First request will be slow.")
                 _LAZY_MODEL = whisper.load_model("tiny.en")
