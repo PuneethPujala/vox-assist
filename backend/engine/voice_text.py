@@ -3,10 +3,12 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Ensure ffmpeg.exe from root directory is accessible via PATH
-root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if root_dir not in os.environ.get("PATH", ""):
-    os.environ["PATH"] = root_dir + os.pathsep + os.environ.get("PATH", "")
+# Platform-aware ffmpeg path injection for local Windows development.
+# On Render (Linux), ffmpeg is installed via system package manager.
+if os.name == "nt":
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if os.path.exists(os.path.join(root_dir, "ffmpeg.exe")) and root_dir not in os.environ.get("PATH", ""):
+         os.environ["PATH"] = root_dir + os.pathsep + os.environ.get("PATH", "")
 
 _LAZY_MODEL = None
 

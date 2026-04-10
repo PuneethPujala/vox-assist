@@ -436,7 +436,22 @@ const Create = () => {
 
                 } catch (err) {
                     console.error("[VOICE] ❌ ERROR — Request to backend failed:", err);
-                    setVoiceError("Transcription failed. Please check your connection and try again.");
+                    
+                    if (err.response) {
+                        // The server responded with a status code that falls out of the range of 2xx
+                        console.error("[VOICE] Backend Error Data:", err.response.data);
+                        console.error("[VOICE] Backend Status:", err.response.status);
+                        const serverMsg = err.response.data?.detail || err.response.data?.message;
+                        setVoiceError(serverMsg ? `Server Error: ${serverMsg}` : "Transcription failed on the server.");
+                    } else if (err.request) {
+                        // The request was made but no response was received
+                        console.error("[VOICE] No response received:", err.request);
+                        setVoiceError("No response from server. Please check your connection or backend status.");
+                    } else {
+                        // Something happened in setting up the request that triggered an Error
+                        console.error("[VOICE] Request setup error:", err.message);
+                        setVoiceError("Error setting up transcription request.");
+                    }
                 } finally {
                     setIsTranscribing(false);
                     console.log("[VOICE] 🏁 Transcription flow complete.");
