@@ -44,20 +44,9 @@ async def lifespan(app: FastAPI):
     # Offload DB init to background to prevent blocking Render deployment
     asyncio.create_task(init_db())
 
-    # Load Whisper in a daemon thread so it doesn't block lifespan/Uvicorn startup
-    import threading
-    def load_whisper_model():
-        try:
-            print("[STARTUP] 🎙️  Loading Whisper model (tiny.en) in background thread...")
-            import whisper
-            app.state.whisper_model = whisper.load_model("tiny.en")
-            print("[STARTUP] ✅  Whisper model loaded successfully.")
-        except Exception as e:
-            print(f"[STARTUP] ❌  ERROR — Failed to load Whisper model: {str(e)}")
-            print("[STARTUP] ⚠️  Voice transcription will fallback to per-request loading.")
-
+    # Voice transcription model will be loaded lazily on the first request 
+    # to avoid locking the Global Interpreter Lock (GIL) and timing out Render's health check.
     app.state.whisper_model = None
-    threading.Thread(target=load_whisper_model, daemon=True).start()
 
     yield
     
