@@ -104,8 +104,8 @@ app.add_middleware(
 app.include_router(api.router, prefix="/api/v1")
 app.include_router(user.router, prefix="/api/v1")
 
-os.makedirs("static/models", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+os.makedirs("backend/static/models", exist_ok=True)
+app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
 @app.get("/")
 def read_root():

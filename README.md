@@ -11,7 +11,6 @@ graph TD;
     ReactApp --> |REST API| FastAPI(Backend: FastAPI);
     FastAPI --> |JWT validation| FirebaseAuth;
     FastAPI --> |Read/Write Context| MongoDB[(MongoDB: Data Store)];
-    FastAPI --> |Webhooks & Payments| Stripe(Stripe Monetization);
     FastAPI --> |Async Orchestration| MLPipeline(ML: Vision & Language Models);
     MLPipeline --> |Output artifacts| Storage(Firebase Storage / CDNs);
     Storage --> |Payloads .PLY, .JSON| ReactApp;
@@ -23,7 +22,6 @@ graph TD;
 - **3D Visualization**: Immediate structural parsing of 2D plans into robust 3D meshes rendered via React Three Fiber.
 - **Keep-Alive Mechanism**: Integrated GitHub Actions pinger to prevent backend spin-down on Render free-tier hosting.
 - **Real-time UX**: Clean interfaces built with Radix and Shadcn Primitives featuring fluid Dark Mode switching.
-- **Freemium Metering**: Users receive 5 free layout generations. Upgrade via Stripe to unlock unlimited orchestration. 
 
 ## API Documentation 📚
 
@@ -31,7 +29,7 @@ Once the backend is live, interactive API documentation is automatically generat
 - **Local Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc Alternate UI**: `http://localhost:8000/redoc`
 
-Explore standard CRUD design endpoints, Monetization API Webhooks, and User metric trackers inherently.
+Explore standard CRUD design endpoints and User metric trackers inherently.
 
 ## Getting Started
 
