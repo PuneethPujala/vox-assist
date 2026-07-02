@@ -181,10 +181,7 @@ const Dashboard = () => {
                 { x: 280, y: 170, w: 80, h: 70 }   // 6: Dining / Other (Right bottom / Orange)
             ];
 
-            if (count === 5) {
-                // If only 5 rooms, expand left bedroom slot downwards to fill the empty space
-                templates[4] = { x: 120, y: 100, w: 80, h: 140 };
-            }
+
 
             sortedRooms.forEach((room, idx) => {
                 if (idx < templates.length) {
@@ -714,7 +711,7 @@ const Dashboard = () => {
                                                     <select
                                                         value={room.type}
                                                         onChange={(e) => handleTypeChange(room.id, e.target.value)}
-                                                        className="text-xs font-semibold text-stone-800 bg-stone-50 hover:bg-stone-100 border border-stone-200 px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-stone-400"
+                                                        className="text-xs font-semibold text-stone-800 bg-stone-50 hover:bg-stone-100 border border-stone-200 px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-stone-400 min-w-[125px]"
                                                     >
                                                         {roomTypes.map(type => (
                                                             <option key={type} value={type}>{type}</option>
@@ -1061,26 +1058,6 @@ const Dashboard = () => {
                                                     return null;
                                                 })()}
                                             </svg>
-
-                                            {/* Interactive floating room indicator tags overlay (Dynamic coordinates) */}
-                                            {computedRects.map((room) => {
-                                                const x_pct = ((room.x + room.width / 2) / 480) * 100;
-                                                const y_pct = ((room.y + room.height / 2) / 280) * 100;
-                                                return (
-                                                    <div
-                                                        key={`tag-${room.id}`}
-                                                        style={{ top: `${y_pct}%`, left: `${x_pct}%` }}
-                                                        className="absolute translate-x-[-50%] translate-y-[-50%] pointer-events-auto"
-                                                    >
-                                                        <div
-                                                            className="group/tag relative bg-white border px-2 py-0.5 rounded text-[8px] text-stone-700 font-mono shadow-md transition-all cursor-help hover:scale-105"
-                                                            style={{ borderColor: `${room.color}` }}
-                                                        >
-                                                            {room.type} <span className="font-bold ml-0.5" style={{ color: '#0369a1' }}>{room.area}sqft</span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
                                         </div>
                                     ) : (
                                         <div className="relative w-full h-full max-h-[340px] flex flex-col items-center justify-center rounded-xl overflow-hidden border border-stone-200 bg-stone-50 p-2">

@@ -9,6 +9,7 @@ import axios from 'axios';
 import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Printer, Box, Link2, Mic, MicOff, Loader } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import gsap from 'gsap';
 
 // Grouped room options — rendered as <optgroup> sections in the dropdown.
 // Hallway is intentionally EXCLUDED — it is auto-injected by the engine.
@@ -185,6 +186,16 @@ const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSp
 
 const Create = () => {
     const { currentUser } = useAuth();
+    const candidatesGridRef = useRef(null);
+
+    useEffect(() => {
+        if (step === 4 && candidatesGridRef.current && candidates.length > 0) {
+            gsap.fromTo(candidatesGridRef.current.children,
+                { opacity: 0, scale: 0.95, y: 15 },
+                { opacity: 1, scale: 1, y: 0, duration: 0.5, stagger: 0.06, ease: "power3.out", delay: 0.15 }
+            );
+        }
+    }, [step, candidates]);
 
     // Wizard State
     const [step, setStep] = useState(1); // 1: Rooms, 2: Style, 3: Review, 4: Generating, 5: Results
@@ -1000,7 +1011,7 @@ const Create = () => {
                             </div>
 
                             {/* Candidate Gallery */}
-                            <div className="grid grid-cols-3 gap-3 mb-6">
+                            <div ref={candidatesGridRef} className="grid grid-cols-3 gap-3 mb-6">
                                 {candidates.map((c) => (
                                     <div
                                         key={c.id}

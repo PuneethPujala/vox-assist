@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { auth, storage } from '../firebase';
-import { updateProfile, updatePassword, updateEmail, deleteUser } from 'firebase/auth';
+import { updateProfile, updatePassword } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { User, Mail, Calendar, Box, Activity, ArrowRight, Settings as SettingsIcon, LayoutTemplate, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -12,6 +12,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
+import gsap from 'gsap';
 
 const Profile = () => {
     const { currentUser } = useAuth();
@@ -20,6 +21,11 @@ const Profile = () => {
     const [mongoUser, setMongoUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'settings'
+
+    const profileHeaderRef = useRef(null);
+    const statsGridRef = useRef(null);
+    const activityGridRef = useRef(null);
+    const settingsFormRef = useRef(null);
 
     const [stats, setStats] = useState({
         totalDesigns: 0,
@@ -40,6 +46,42 @@ const Profile = () => {
             fetchUserData();
         }
     }, [currentUser]);
+
+    useEffect(() => {
+        if (!loading) {
+            // Profile header fade in
+            gsap.fromTo(profileHeaderRef.current,
+                { opacity: 0, y: -15 },
+                { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }
+            );
+        }
+    }, [loading]);
+
+    useEffect(() => {
+        if (!loading) {
+            if (activeTab === 'overview') {
+                if (statsGridRef.current) {
+                    gsap.fromTo(statsGridRef.current.children,
+                        { opacity: 0, scale: 0.95, y: 15 },
+                        { opacity: 1, scale: 1, y: 0, duration: 0.5, stagger: 0.08, ease: 'power2.out' }
+                    );
+                }
+                if (activityGridRef.current) {
+                    gsap.fromTo(activityGridRef.current.children,
+                        { opacity: 0, y: 20 },
+                        { opacity: 1, y: 0, duration: 0.6, stagger: 0.06, ease: 'power3.out', delay: 0.2 }
+                    );
+                }
+            } else if (activeTab === 'settings') {
+                if (settingsFormRef.current) {
+                    gsap.fromTo(settingsFormRef.current.children,
+                        { opacity: 0, y: 15 },
+                        { opacity: 1, y: 0, duration: 0.6, stagger: 0.05, ease: 'power3.out' }
+                    );
+                }
+            }
+        }
+    }, [activeTab, loading]);
 
     const fetchUserData = async () => {
         try {
@@ -121,7 +163,6 @@ const Profile = () => {
             }, { headers: { Authorization: `Bearer ${token}` } });
 
             setMessage({ type: 'success', text: 'Avatar updated successfully!' });
-            // Force a re-render by updating local dummy state or context if needed
             window.location.reload();
         } catch (error) {
             setMessage({ type: 'error', text: 'Failed to upload avatar: ' + error.message });
@@ -132,7 +173,8 @@ const Profile = () => {
 
     const handleDeleteAccount = async () => {
         try {
-            await deleteUser(auth.currentUser);
+            const { deleteUser: firebaseDeleteUser } = await import("firebase/auth");
+            await firebaseDeleteUser(auth.currentUser);
             navigate('/login');
         } catch (error) {
             if (error.code === 'auth/requires-recent-login') {
@@ -172,13 +214,12 @@ const Profile = () => {
         <div className="pt-24 px-6 md:px-12 min-h-screen bg-cream">
             <div className="max-w-6xl mx-auto">
                 {/* Header Section */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-2xl p-8 shadow-sm border border-stone-100 flex flex-col md:flex-row items-center md:items-start gap-8"
+                <div
+                    ref={profileHeaderRef}
+                    className="bg-white rounded-2xl p-8 shadow-sm border border-stone-150/80 flex flex-col md:flex-row items-center md:items-start gap-8 opacity-0"
                 >
                     <div className="relative group cursor-pointer" onClick={() => document.getElementById('avatar-upload').click()}>
-                        <div className={`w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-stone-200 ${uploadingAvatar ? 'opacity-50' : 'group-hover:opacity-80'} transition-opacity`}>
+                        <div className={`w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-stone-250 ${uploadingAvatar ? 'opacity-50' : 'group-hover:opacity-80'} transition-opacity`}>
                             {currentUser.photoURL ? (
                                 <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
@@ -219,7 +260,7 @@ const Profile = () => {
                             </div>
                         )}
                     </div>
-                </motion.div>
+                </div>
 
                 {/* Tabs */}
                 <div className="flex gap-6 mt-8 border-b border-stone-200">
@@ -240,26 +281,26 @@ const Profile = () => {
                 {/* Content */}
                 <div className="mt-8 mb-12">
                     {activeTab === 'overview' ? (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                                <StatCard icon={<Box />} label="Total Designs" value={stats.totalDesigns} delay={0.1} />
-                                <StatCard icon={<Activity />} label="Avg. Efficiency" value={`${stats.avgScore}%`} delay={0.2} />
-                                <StatCard icon={<Box />} label="Rooms Planned" value={stats.totalRooms} delay={0.3} />
+                        <div>
+                            <div ref={statsGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                                <StatCard icon={<Box />} label="Total Designs" value={stats.totalDesigns} />
+                                <StatCard icon={<Activity />} label="Avg. Efficiency" value={`${stats.avgScore}%`} />
+                                <StatCard icon={<Box />} label="Rooms Planned" value={stats.totalRooms} />
                             </div>
 
                             <div className="flex justify-between items-center mb-6">
                                 <h2 className="text-2xl font-light text-charcoal">Recent Activity</h2>
-                                <Link to="/my-designs" className="text-stone-500 hover:text-charcoal flex items-center gap-1 text-sm">
+                                <Link to="/my-designs" className="text-stone-500 hover:text-charcoal flex items-center gap-1 text-sm font-medium">
                                     View All <ArrowRight size={16} />
                                 </Link>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div ref={activityGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {designs.slice(0, 3).map((design, idx) => (
-                                    <Card key={idx}>
-                                        <CardContent className="p-4">
-                                            <h3 className="font-medium truncate">{design.prompt || "Untitled Project"}</h3>
-                                            <p className="text-sm text-stone-500 mt-2">{formatDistanceToNow(new Date(design.created_at), { addSuffix: true })}</p>
+                                    <Card key={idx} className="opacity-0">
+                                        <CardContent className="p-5">
+                                            <h3 className="font-semibold text-charcoal truncate">{design.prompt || "Untitled Project"}</h3>
+                                            <p className="text-xs text-stone-400 mt-2 font-medium">{formatDistanceToNow(new Date(design.created_at), { addSuffix: true })}</p>
                                         </CardContent>
                                     </Card>
                                 ))}
@@ -269,18 +310,18 @@ const Profile = () => {
                                     </div>
                                 )}
                             </div>
-                        </motion.div>
+                        </div>
                     ) : (
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl bg-white p-8 rounded-2xl shadow-sm border border-stone-100">
-                            <h2 className="text-2xl font-light text-charcoal mb-6">Account Settings</h2>
+                        <div ref={settingsFormRef} className="max-w-2xl bg-white p-8 rounded-2xl shadow-sm border border-stone-100">
+                            <h2 className="text-2xl font-light text-charcoal mb-6 opacity-0">Account Settings</h2>
 
                             {message.text && (
-                                <div className={`mb-6 p-4 rounded-lg text-sm border ${message.type === 'error' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
+                                <div className="mb-6 p-4 rounded-lg text-sm border opacity-0 bg-stone-50 border-stone-100">
                                     {message.text}
                                 </div>
                             )}
 
-                            <form onSubmit={handleUpdateProfile} className="space-y-6">
+                            <form onSubmit={handleUpdateProfile} className="space-y-6 opacity-0">
                                 <div>
                                     <label className="block text-sm font-medium text-stone-700 mb-2">Display Name</label>
                                     <Input
@@ -314,9 +355,9 @@ const Profile = () => {
                                 </Button>
                             </form>
 
-                            <hr className="my-8 border-stone-200" />
+                            <hr className="my-8 border-stone-200 opacity-0" />
 
-                            <div>
+                            <div className="opacity-0">
                                 <h3 className="text-red-600 font-medium mb-2 flex items-center gap-2"><AlertTriangle size={18} /> Danger Zone</h3>
                                 <p className="text-sm text-stone-500 mb-4">Once you delete your account, there is no going back. Please be certain.</p>
                                 <Button
@@ -326,7 +367,7 @@ const Profile = () => {
                                     Delete Account
                                 </Button>
                             </div>
-                        </motion.div>
+                        </div>
                     )}
                 </div>
             </div>
@@ -343,7 +384,7 @@ const Profile = () => {
                             className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl"
                         >
                             <h3 className="text-xl font-medium text-charcoal mb-4">Delete Account?</h3>
-                            <p className="text-stone-500 mb-6">Are you sure you want to permanently delete your account? All your designs and data will be lost.</p>
+                            <p className="text-stone-500 mb-6">Are you sure you want to permanently delete your account? All your data will be lost.</p>
                             <div className="flex gap-4 justify-end mt-6">
                                 <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
                                 <Button variant="destructive" onClick={handleDeleteAccount}>Yes, Delete</Button>
@@ -356,24 +397,18 @@ const Profile = () => {
     );
 };
 
-const StatCard = ({ icon, label, value, delay }) => (
-    <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay }}
-    >
-        <Card>
-            <CardContent className="flex items-center gap-4 p-6 text-left w-full h-full">
-                <div className="p-3 bg-stone-50 text-stone-900 rounded-lg shadow-sm border border-stone-100">
-                    {React.cloneElement(icon, { size: 24 })}
-                </div>
-                <div>
-                    <div className="text-2xl font-light text-stone-900">{value}</div>
-                    <div className="text-xs text-stone-500 uppercase tracking-wide font-medium">{label}</div>
-                </div>
-            </CardContent>
-        </Card>
-    </motion.div>
+const StatCard = ({ icon, label, value }) => (
+    <Card className="opacity-0">
+        <CardContent className="flex items-center gap-4 p-6 text-left w-full h-full">
+            <div className="p-3 bg-stone-50 text-stone-900 rounded-lg shadow-sm border border-stone-150">
+                {React.cloneElement(icon, { size: 24 })}
+            </div>
+            <div>
+                <div className="text-2xl font-light text-stone-900">{value}</div>
+                <div className="text-xs text-stone-500 uppercase tracking-wide font-medium">{label}</div>
+            </div>
+        </CardContent>
+    </Card>
 );
 
 export default Profile;

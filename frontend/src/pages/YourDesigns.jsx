@@ -1,16 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, Trash2, Edit2, Copy, MoreVertical, X, Check, LayoutTemplate } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { toast, Toaster } from 'react-hot-toast'; // Will install react-hot-toast later
+import { toast, Toaster } from 'react-hot-toast';
 import { Skeleton } from '../components/ui/skeleton';
+import gsap from 'gsap';
 
 const YourDesigns = () => {
     const { currentUser } = useAuth();
     const [designs, setDesigns] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    const headerRef = useRef(null);
+    const containerRef = useRef(null);
 
     // Editing state
     const [editingDesign, setEditingDesign] = useState(null);
@@ -21,6 +25,24 @@ const YourDesigns = () => {
             fetchMyDesigns();
         }
     }, [currentUser]);
+
+    useEffect(() => {
+        if (!loading) {
+            // Header animation
+            gsap.fromTo(headerRef.current,
+                { opacity: 0, y: -15 },
+                { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }
+            );
+
+            // Cards stagger entry
+            if (designs.length > 0 && containerRef.current) {
+                gsap.fromTo(containerRef.current.children,
+                    { opacity: 0, y: 25 },
+                    { opacity: 1, y: 0, duration: 0.7, stagger: 0.05, ease: 'power3.out', delay: 0.05 }
+                );
+            }
+        }
+    }, [loading, designs]);
 
     const fetchMyDesigns = async () => {
         try {
@@ -88,6 +110,28 @@ const YourDesigns = () => {
         }
     };
 
+    const handleCardMouseEnter = (e) => {
+        gsap.to(e.currentTarget, {
+            y: -5,
+            scale: 1.015,
+            boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.08), 0 8px 15px -8px rgba(0, 0, 0, 0.04)',
+            borderColor: '#78716c',
+            duration: 0.35,
+            ease: 'power2.out'
+        });
+    };
+
+    const handleCardMouseLeave = (e) => {
+        gsap.to(e.currentTarget, {
+            y: 0,
+            scale: 1,
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
+            borderColor: '#f5f5f4',
+            duration: 0.35,
+            ease: 'power2.out'
+        });
+    };
+
     if (loading) return (
         <div className="pt-24 px-6 md:px-12 min-h-screen bg-cream">
             <div className="max-w-7xl mx-auto">
@@ -119,21 +163,20 @@ const YourDesigns = () => {
         <div className="pt-24 px-6 md:px-12 min-h-screen bg-cream">
             <Toaster position="bottom-right" />
 
-            <div className="flex justify-between items-center mb-8 max-w-7xl mx-auto">
+            <div ref={headerRef} className="flex justify-between items-center mb-8 max-w-7xl mx-auto opacity-0">
                 <h1 className="text-3xl font-light text-charcoal">My Projects</h1>
                 <div className="text-sm px-3 py-1 bg-stone-100 rounded-full text-stone-600 font-medium tracking-wide">
                     {designs.length} Designs
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 max-w-7xl mx-auto">
+            <div ref={containerRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 max-w-7xl mx-auto">
                 {designs.map((design, idx) => (
-                    <motion.div
+                    <div
                         key={design._id || idx}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: Math.min(idx * 0.05, 0.5) }}
-                        className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-stone-100 relative group flex flex-col h-full"
+                        onMouseEnter={handleCardMouseEnter}
+                        onMouseLeave={handleCardMouseLeave}
+                        className="bg-white rounded-xl overflow-hidden shadow-sm border border-stone-100 relative group flex flex-col h-full opacity-0"
                     >
                         {/* Thumbnail Generator/Placeholder */}
                         <div className="h-40 bg-stone-50 flex flex-col items-center justify-center relative overflow-hidden border-b border-stone-100">
@@ -197,7 +240,7 @@ const YourDesigns = () => {
                                 </div>
                             </div>
                         </div>
-                    </motion.div>
+                    </div>
                 ))}
 
                 {designs.length === 0 && (
