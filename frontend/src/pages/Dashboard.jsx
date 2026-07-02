@@ -172,13 +172,13 @@ const Dashboard = () => {
         } else {
             // >= 5 rooms: Realistic branched house layout template matching house_3d_minimal.png
             const templates = [
-                { x: 200, y: 100, w: 80, h: 140 }, // 0: Living Room (Center corridor / Light Blue)
-                { x: 200, y: 240, w: 80, h: 70 },  // 1: Kitchen (Bottom extension / Green)
-                { x: 200, y: 30,  w: 80, h: 70 },  // 2: Bedroom 1 (Top extension / Yellow)
-                { x: 120, y: 170, w: 80, h: 70 },  // 3: Bathroom (Left bottom / Purple)
-                { x: 120, y: 100, w: 80, h: 70 },  // 4: Bedroom 2 (Left top / Blue)
-                { x: 280, y: 100, w: 80, h: 70 },  // 5: Bedroom 3 (Right top / Pink)
-                { x: 280, y: 170, w: 80, h: 70 }   // 6: Dining / Other (Right bottom / Orange)
+                { x: 200, y: 70,  w: 80, h: 140 }, // 0: Living Room (Center corridor / Light Blue)
+                { x: 200, y: 210, w: 80, h: 70 },  // 1: Kitchen (Bottom extension / Green)
+                { x: 200, y: 0,   w: 80, h: 70 },  // 2: Bedroom 1 (Top extension / Yellow)
+                { x: 120, y: 140, w: 80, h: 70 },  // 3: Bathroom (Left bottom / Purple)
+                { x: 120, y: 70,  w: 80, h: 70 },  // 4: Bedroom 2 (Left top / Blue)
+                { x: 280, y: 70,  w: 80, h: 70 },  // 5: Bedroom 3 (Right top / Pink)
+                { x: 280, y: 140, w: 80, h: 70 }   // 6: Dining / Other (Right bottom / Orange)
             ];
 
 
@@ -980,14 +980,14 @@ const Dashboard = () => {
                                                             </g>
                                                         )}
                                                         {/* Top Wall Window */}
-                                                        {(room.y === 30 || room.y === 100) && room.type !== 'Living Room' && (
+                                                        {(room.y === 0 || room.y === 70) && room.type !== 'Living Room' && (
                                                             <g>
                                                                 <line x1={room.x + room.width/2 - 12} y1={room.y} x2={room.x + room.width/2 + 12} y2={room.y} stroke="#0ea5e9" strokeWidth="2.5" />
                                                                 <line x1={room.x + room.width/2 - 12} y1={room.y} x2={room.x + room.width/2 + 12} y2={room.y} stroke="#ffffff" strokeWidth="1" />
                                                             </g>
                                                         )}
                                                         {/* Bottom Wall Window */}
-                                                        {(Math.abs(room.y + room.height - 310) < 1 || Math.abs(room.y + room.height - 240) < 1) && room.type !== 'Living Room' && (
+                                                        {(Math.abs(room.y + room.height - 280) < 1 || Math.abs(room.y + room.height - 210) < 1) && room.type !== 'Living Room' && (
                                                             <g>
                                                                 <line x1={room.x + room.width/2 - 12} y1={room.y + room.height} x2={room.x + room.width/2 + 12} y2={room.y + room.height} stroke="#0ea5e9" strokeWidth="2.5" />
                                                                 <line x1={room.x + room.width/2 - 12} y1={room.y + room.height} x2={room.x + room.width/2 + 12} y2={room.y + room.height} stroke="#ffffff" strokeWidth="1" />
@@ -1038,14 +1038,13 @@ const Dashboard = () => {
                                                     return null;
                                                 })}
 
-                                                {/* Door swing connecting left and right columns if both exist */}
+                                                {/* Door swing connecting left column to center corridor */}
                                                 {(() => {
                                                     const leftCol = computedRects.filter(r => r.x === 120);
-                                                    const rightCol = computedRects.filter(r => r.x > 200);
-                                                    if (leftCol.length > 0 && rightCol.length > 0) {
-                                                        const firstLeft = leftCol[0];
+                                                    const hasCenter = computedRects.some(r => r.x === 200);
+                                                    if (leftCol.length > 0 && hasCenter) {
                                                         const doorX = 200;
-                                                        const doorY = firstLeft.y + firstLeft.height / 2;
+                                                        const doorY = 140;
                                                         const doorW = 16;
                                                         return (
                                                             <g key="door-v-main">

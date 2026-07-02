@@ -186,16 +186,6 @@ const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSp
 
 const Create = () => {
     const { currentUser } = useAuth();
-    const candidatesGridRef = useRef(null);
-
-    useEffect(() => {
-        if (step === 4 && candidatesGridRef.current && candidates.length > 0) {
-            gsap.fromTo(candidatesGridRef.current.children,
-                { opacity: 0, scale: 0.95, y: 15 },
-                { opacity: 1, scale: 1, y: 0, duration: 0.5, stagger: 0.06, ease: "power3.out", delay: 0.15 }
-            );
-        }
-    }, [step, candidates]);
 
     // Wizard State
     const [step, setStep] = useState(1); // 1: Rooms, 2: Style, 3: Review, 4: Generating, 5: Results
@@ -236,6 +226,17 @@ const Create = () => {
     const sceneRef = useRef();
     const glRef = useRef();
     const fullLayoutRef = useRef(null);
+
+    const candidatesGridRef = useRef(null);
+
+    useEffect(() => {
+        if (step === 4 && candidatesGridRef.current && candidates.length > 0) {
+            gsap.fromTo(candidatesGridRef.current.children,
+                { opacity: 0, scale: 0.95, y: 15 },
+                { opacity: 1, scale: 1, y: 0, duration: 0.5, stagger: 0.06, ease: "power3.out", delay: 0.15 }
+            );
+        }
+    }, [step, candidates]);
 
     // --- EXPORT HANDLERS ---
     const handleExportSTL = () => {
