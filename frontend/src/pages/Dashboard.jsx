@@ -81,6 +81,81 @@ const Dashboard = () => {
 
     const roomTypes = ['Living Room', 'Bedroom', 'Kitchen', 'Bathroom', 'Dining Room', 'Hallway'];
 
+    // Helper to compute room positions dynamically
+    const computedRects = React.useMemo(() => {
+        const padding = 15;
+        const w = 480; // fixed relative size for SVG viewbox
+        const h = 280;
+
+        const innerW = w - 2 * padding;
+        const innerH = h - 2 * padding;
+
+        if (!rooms || rooms.length === 0) return [];
+
+        const mid = Math.ceil(rooms.length / 2);
+        const leftRooms = rooms.slice(0, mid);
+        const rightRooms = rooms.slice(mid);
+
+        const leftArea = leftRooms.reduce((sum, r) => sum + r.area, 0);
+        const rightArea = rightRooms.reduce((sum, r) => sum + r.area, 0);
+        const totalArea = leftArea + rightArea || 1;
+
+        let leftWidthPercent = leftArea / totalArea;
+        if (leftWidthPercent < 0.35) leftWidthPercent = 0.35;
+        if (leftWidthPercent > 0.65) leftWidthPercent = 0.65;
+
+        const leftW = innerW * leftWidthPercent;
+        const rightW = innerW - leftW;
+
+        const rects = [];
+
+        // Layout left column
+        let currentY = padding;
+        leftRooms.forEach((room, index) => {
+            const roomHeightPercent = leftArea > 0 ? (room.area / leftArea) : (1 / leftRooms.length);
+            const roomH = innerH * roomHeightPercent;
+            rects.push({
+                ...room,
+                x: padding,
+                y: currentY,
+                width: leftW,
+                height: roomH,
+                color: roomColors[index % roomColors.length]
+            });
+            currentY += roomH;
+        });
+
+        // Layout right column
+        currentY = padding;
+        rightRooms.forEach((room, index) => {
+            const roomHeightPercent = rightArea > 0 ? (room.area / rightArea) : (1 / rightRooms.length);
+            const roomH = innerH * roomHeightPercent;
+            rects.push({
+                ...room,
+                x: padding + leftW,
+                y: currentY,
+                width: rightW,
+                height: roomH,
+                color: roomColors[(mid + index) % roomColors.length]
+            });
+            currentY += roomH;
+        });
+
+        return rects;
+    }, [rooms]);
+
+    const projectIso = React.useCallback((x, y, z) => {
+        const scale = 0.8;
+        const dx = (x - 240) * scale;
+        const dy = (y - 140) * scale;
+        const px = (dx - dy) * 0.866;
+        const py = (dx + dy) * 0.5 - z;
+        return {
+            x: 300 + px,
+            y: 175 + py
+        };
+    }, []);
+
     // Scroll opacity calculation
     useEffect(() => {
         const handleScroll = () => {
@@ -803,51 +878,291 @@ const Dashboard = () => {
                                     />
 
                                     {outputTab === 'blueprint' ? (
-                                        <div className="relative w-full h-full max-h-[340px] flex items-center justify-center overflow-hidden rounded-xl border border-stone-800">
-                                            <img
-                                                src={vox2DBlueprint}
-                                                alt="CAD Blueprint"
-                                                className="w-full h-full object-contain opacity-90 transition-opacity duration-300"
-                                            />
-                                            {/* Interactive floating room indicator tags overlay */}
-                                            <div className="absolute top-[25%] left-[24%] translate-x-[-50%] translate-y-[-50%] pointer-events-auto">
-                                                <div className="group/tag relative bg-stone-900/90 border border-amber-500/50 hover:border-amber-400 px-2.5 py-1 rounded-md text-[10px] text-white font-mono shadow-lg transition-all cursor-help hover:scale-105">
-                                                    Living Room <span className="text-[9px] text-amber-400 font-bold ml-1">300sqft</span>
-                                                </div>
-                                            </div>
-                                            <div className="absolute top-[32%] left-[70%] translate-x-[-50%] translate-y-[-50%] pointer-events-auto">
-                                                <div className="group/tag relative bg-stone-900/90 border border-emerald-500/50 hover:border-emerald-400 px-2.5 py-1 rounded-md text-[10px] text-white font-mono shadow-lg transition-all cursor-help hover:scale-105">
-                                                    Kitchen <span className="text-[9px] text-emerald-400 font-bold ml-1">120sqft</span>
-                                                </div>
-                                            </div>
-                                            <div className="absolute top-[68%] left-[28%] translate-x-[-50%] translate-y-[-50%] pointer-events-auto">
-                                                <div className="group/tag relative bg-stone-900/90 border border-blue-500/50 hover:border-blue-400 px-2.5 py-1 rounded-md text-[10px] text-white font-mono shadow-lg transition-all cursor-help hover:scale-105">
-                                                    Bedroom 1 <span className="text-[9px] text-blue-400 font-bold ml-1">300sqft</span>
-                                                </div>
-                                            </div>
-                                            <div className="absolute top-[65%] left-[68%] translate-x-[-50%] translate-y-[-50%] pointer-events-auto">
-                                                <div className="group/tag relative bg-stone-900/90 border border-pink-500/50 hover:border-pink-400 px-2.5 py-1 rounded-md text-[10px] text-white font-mono shadow-lg transition-all cursor-help hover:scale-105">
-                                                    Bedroom 2 <span className="text-[9px] text-pink-400 font-bold ml-1">150sqft</span>
-                                                </div>
-                                            </div>
-                                            <div className="absolute top-[48%] left-[46%] translate-x-[-50%] translate-y-[-50%] pointer-events-auto">
-                                                <div className="group/tag relative bg-stone-900/90 border border-violet-500/50 hover:border-violet-400 px-2.5 py-1 rounded-md text-[10px] text-white font-mono shadow-lg transition-all cursor-help hover:scale-105">
-                                                    Bathroom <span className="text-[9px] text-violet-400 font-bold ml-1">100sqft</span>
-                                                </div>
-                                            </div>
+                                        <div className="relative w-full h-full max-h-[340px] flex items-center justify-center overflow-hidden rounded-xl border border-stone-800 bg-stone-950 p-2">
+                                            {/* Dynamic SVG Blueprint Canvas */}
+                                            <svg viewBox="0 0 480 280" className="w-full h-full object-contain">
+                                                {/* Grid Background */}
+                                                <defs>
+                                                    <pattern id="blueprint-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                                                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255, 255, 255, 0.04)" strokeWidth="1" />
+                                                    </pattern>
+                                                </defs>
+                                                <rect width="100%" height="100%" fill="url(#blueprint-grid)" />
+
+                                                {/* Rooms */}
+                                                {computedRects.map((room) => (
+                                                    <g key={room.id}>
+                                                        {/* Filled area */}
+                                                        <rect
+                                                            x={room.x}
+                                                            y={room.y}
+                                                            width={room.width}
+                                                            height={room.height}
+                                                            fill={room.color}
+                                                            fillOpacity="0.08"
+                                                            stroke="#1e293b"
+                                                            strokeWidth="3.5"
+                                                        />
+                                                        {/* Inner blueprint outline border */}
+                                                        <rect
+                                                            x={room.x + 2}
+                                                            y={room.y + 2}
+                                                            width={room.width - 4}
+                                                            height={room.height - 4}
+                                                            fill="none"
+                                                            stroke={room.color}
+                                                            strokeWidth="1"
+                                                            strokeOpacity="0.3"
+                                                            strokeDasharray="4 2"
+                                                        />
+                                                        
+                                                        {/* Draw windows on outer walls */}
+                                                        {/* Left Wall Window */}
+                                                        {room.x === 15 && (
+                                                            <g>
+                                                                <line x1={room.x} y1={room.y + room.height/2 - 12} x2={room.x} y2={room.y + room.height/2 + 12} stroke="#06b6d4" strokeWidth="2.5" />
+                                                                <line x1={room.x} y1={room.y + room.height/2 - 12} x2={room.x} y2={room.y + room.height/2 + 12} stroke="#ffffff" strokeWidth="1" />
+                                                            </g>
+                                                        )}
+                                                        {/* Right Wall Window */}
+                                                        {Math.abs(room.x + room.width - 465) < 1 && (
+                                                            <g>
+                                                                <line x1={room.x + room.width} y1={room.y + room.height/2 - 12} x2={room.x + room.width} y2={room.y + room.height/2 + 12} stroke="#06b6d4" strokeWidth="2.5" />
+                                                                <line x1={room.x + room.width} y1={room.y + room.height/2 - 12} x2={room.x + room.width} y2={room.y + room.height/2 + 12} stroke="#ffffff" strokeWidth="1" />
+                                                            </g>
+                                                        )}
+                                                        {/* Top Wall Window */}
+                                                        {room.y === 15 && (
+                                                            <g>
+                                                                <line x1={room.x + room.width/2 - 12} y1={room.y} x2={room.x + room.width/2 + 12} y2={room.y} stroke="#06b6d4" strokeWidth="2.5" />
+                                                                <line x1={room.x + room.width/2 - 12} y1={room.y} x2={room.x + room.width/2 + 12} y2={room.y} stroke="#ffffff" strokeWidth="1" />
+                                                            </g>
+                                                        )}
+                                                        {/* Bottom Wall Window */}
+                                                        {Math.abs(room.y + room.height - 265) < 1 && (
+                                                            <g>
+                                                                <line x1={room.x + room.width/2 - 12} y1={room.y + room.height} x2={room.x + room.width/2 + 12} y2={room.y + room.height} stroke="#06b6d4" strokeWidth="2.5" />
+                                                                <line x1={room.x + room.width/2 - 12} y1={room.y + room.height} x2={room.x + room.width/2 + 12} y2={room.y + room.height} stroke="#ffffff" strokeWidth="1" />
+                                                            </g>
+                                                        )}
+
+                                                        {/* Room details text inside SVG */}
+                                                        <text
+                                                            x={room.x + room.width / 2}
+                                                            y={room.y + room.height / 2 - 4}
+                                                            textAnchor="middle"
+                                                            fill="#e2e8f0"
+                                                            fontSize="8.5"
+                                                            fontWeight="bold"
+                                                            fontFamily="monospace"
+                                                            letterSpacing="0.05em"
+                                                        >
+                                                            {room.type.toUpperCase()}
+                                                        </text>
+                                                        <text
+                                                            x={room.x + room.width / 2}
+                                                            y={room.y + room.height / 2 + 8}
+                                                            textAnchor="middle"
+                                                            fill={room.color}
+                                                            fontSize="7"
+                                                            fontWeight="bold"
+                                                            fontFamily="monospace"
+                                                        >
+                                                            {room.area} SQFT
+                                                        </text>
+                                                    </g>
+                                                ))}
+
+                                                {/* Door swings for horizontal partitions */}
+                                                {computedRects.map((room) => {
+                                                    const nextRoom = computedRects.find(r => r.x === room.x && Math.abs(r.y - (room.y + room.height)) < 1);
+                                                    if (nextRoom) {
+                                                        const doorX = room.x + room.width / 3;
+                                                        const doorW = 16;
+                                                        return (
+                                                            <g key={`door-h-${room.id}`}>
+                                                                <line x1={doorX} y1={room.y + room.height} x2={doorX + doorW} y2={room.y + room.height} stroke="#0c0a09" strokeWidth="4.5" />
+                                                                <line x1={doorX} y1={room.y + room.height} x2={doorX} y2={room.y + room.height - doorW} stroke="#94a3b8" strokeWidth="1.5" />
+                                                                <path d={`M ${doorX} ${room.y + room.height - doorW} A ${doorW} ${doorW} 0 0 1 ${doorX + doorW} ${room.y + room.height}`} fill="none" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
+                                                            </g>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })}
+
+                                                {/* Door swing connecting left and right columns if both exist */}
+                                                {(() => {
+                                                    const leftCol = computedRects.filter(r => r.x === 15);
+                                                    const rightCol = computedRects.filter(r => r.x > 15);
+                                                    if (leftCol.length > 0 && rightCol.length > 0) {
+                                                        const firstLeft = leftCol[0];
+                                                        const firstRight = rightCol[0];
+                                                        const leftW = firstLeft.width;
+                                                        const doorX = 15 + leftW;
+                                                        const overlapYEnd = Math.min(firstLeft.y + firstLeft.height, firstRight.y + firstRight.height);
+                                                        const doorY = (15 + overlapYEnd) / 2;
+                                                        const doorW = 16;
+                                                        return (
+                                                            <g key="door-v-main">
+                                                                <line x1={doorX} y1={doorY - doorW/2} x2={doorX} y2={doorY + doorW/2} stroke="#0c0a09" strokeWidth="4.5" />
+                                                                <line x1={doorX} y1={doorY - doorW/2} x2={doorX - doorW} y2={doorY - doorW/2} stroke="#94a3b8" strokeWidth="1.5" />
+                                                                <path d={`M ${doorX - doorW} ${doorY - doorW/2} A ${doorW} ${doorW} 0 0 1 ${doorX} ${doorY + doorW/2}`} fill="none" stroke="#64748b" strokeWidth="1" strokeDasharray="2 2" />
+                                                            </g>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
+
+                                                {/* Outer boundary wall */}
+                                                <rect x="13" y="13" width="454" height="254" fill="none" stroke="#475569" strokeWidth="2.5" strokeDasharray="6 4" />
+                                            </svg>
+
+                                            {/* Interactive floating room indicator tags overlay (Dynamic coordinates) */}
+                                            {computedRects.map((room) => {
+                                                const x_pct = ((room.x + room.width / 2) / 480) * 100;
+                                                const y_pct = ((room.y + room.height / 2) / 280) * 100;
+                                                return (
+                                                    <div
+                                                        key={`tag-${room.id}`}
+                                                        style={{ top: `${y_pct}%`, left: `${x_pct}%` }}
+                                                        className="absolute translate-x-[-50%] translate-y-[-50%] pointer-events-auto"
+                                                    >
+                                                        <div
+                                                            className="group/tag relative bg-stone-900/90 border hover:border-white px-2 py-0.5 rounded text-[8px] text-white font-mono shadow-lg transition-all cursor-help hover:scale-105"
+                                                            style={{ borderColor: `${room.color}80` }}
+                                                        >
+                                                            {room.type} <span className="font-bold ml-0.5" style={{ color: room.color }}>{room.area}sqft</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     ) : (
-                                        <div className="relative w-full h-full max-h-[340px] flex flex-col items-center justify-center rounded-xl overflow-hidden border border-stone-850">
-                                            <img
-                                                src={vox3DStructure}
-                                                alt="3D Wall Structure Partition Mesh"
-                                                className="w-full h-full object-contain opacity-95 hover:scale-105 transition-transform duration-700"
-                                            />
+                                        <div className="relative w-full h-full max-h-[340px] flex flex-col items-center justify-center rounded-xl overflow-hidden border border-stone-850 bg-stone-950 p-2">
+                                            {/* Dynamic Isometric Wireframe SVG */}
+                                            <svg viewBox="0 0 600 350" className="w-full h-full object-contain">
+                                                {/* Grid lines in isometric projection */}
+                                                <defs>
+                                                    <pattern id="iso-grid" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                                                        <rect width="30" height="30" fill="none" stroke="rgba(255, 255, 255, 0.02)" strokeWidth="1" />
+                                                    </pattern>
+                                                </defs>
+                                                <rect width="100%" height="100%" fill="url(#iso-grid)" />
+
+                                                {/* Render 3D Rooms in Isometric Projection */}
+                                                {computedRects.map((room) => {
+                                                    const wallH = 25; // isometric height offset
+                                                    
+                                                    // 2D Corner Points
+                                                    const p0 = { x: room.x, y: room.y };
+                                                    const p1 = { x: room.x + room.width, y: room.y };
+                                                    const p2 = { x: room.x + room.width, y: room.y + room.height };
+                                                    const p3 = { x: room.x, y: room.y + room.height };
+
+                                                    // Projected Floor Points (z = 0)
+                                                    const f0 = projectIso(p0.x, p0.y, 0);
+                                                    const f1 = projectIso(p1.x, p1.y, 0);
+                                                    const f2 = projectIso(p2.x, p2.y, 0);
+                                                    const f3 = projectIso(p3.x, p3.y, 0);
+
+                                                    // Projected Wall Top Points (z = wallH)
+                                                    const t0 = projectIso(p0.x, p0.y, wallH);
+                                                    const t1 = projectIso(p1.x, p1.y, wallH);
+                                                    const t2 = projectIso(p2.x, p2.y, wallH);
+                                                    const t3 = projectIso(p3.x, p3.y, wallH);
+
+                                                    // Centered text projection
+                                                    const c = projectIso(room.x + room.width/2, room.y + room.height/2, 5);
+
+                                                    return (
+                                                        <g key={`struct-${room.id}`}>
+                                                            {/* Floor Polygon */}
+                                                            <polygon
+                                                                points={`${f0.x},${f0.y} ${f1.x},${f1.y} ${f2.x},${f2.y} ${f3.x},${f3.y}`}
+                                                                fill={room.color}
+                                                                fillOpacity="0.05"
+                                                                stroke="rgba(255, 255, 255, 0.05)"
+                                                                strokeWidth="0.5"
+                                                            />
+
+                                                            {/* Translucent Wall Faces (Holographic effect) */}
+                                                            {/* Back-left wall face */}
+                                                            <polygon
+                                                                points={`${f0.x},${f0.y} ${f1.x},${f1.y} ${t1.x},${t1.y} ${t0.x},${t0.y}`}
+                                                                fill="rgba(34, 211, 238, 0.02)"
+                                                                stroke="rgba(34, 211, 238, 0.15)"
+                                                                strokeWidth="0.75"
+                                                            />
+                                                            {/* Back-right wall face */}
+                                                            <polygon
+                                                                points={`${f1.x},${f1.y} ${f2.x},${f2.y} ${t2.x},${t2.y} ${t1.x},${t1.y}`}
+                                                                fill="rgba(34, 211, 238, 0.02)"
+                                                                stroke="rgba(34, 211, 238, 0.15)"
+                                                                strokeWidth="0.75"
+                                                            />
+                                                            {/* Front-right wall face */}
+                                                            <polygon
+                                                                points={`${f2.x},${f2.y} ${f3.x},${f3.y} ${t3.x},${t3.y} ${t2.x},${t2.y}`}
+                                                                fill="rgba(34, 211, 238, 0.02)"
+                                                                stroke="rgba(34, 211, 238, 0.15)"
+                                                                strokeWidth="0.75"
+                                                            />
+                                                            {/* Front-left wall face */}
+                                                            <polygon
+                                                                points={`${f3.x},${f3.y} ${f0.x},${f0.y} ${t0.x},${t0.y} ${t3.x},${t3.y}`}
+                                                                fill="rgba(34, 211, 238, 0.02)"
+                                                                stroke="rgba(34, 211, 238, 0.15)"
+                                                                strokeWidth="0.75"
+                                                            />
+
+                                                            {/* Glowing Wall Top wire outlines */}
+                                                            <polygon
+                                                                points={`${t0.x},${t0.y} ${t1.x},${t1.y} ${t2.x},${t2.y} ${t3.x},${t3.y}`}
+                                                                fill="none"
+                                                                stroke="#06b6d4"
+                                                                strokeWidth="1.2"
+                                                                strokeOpacity="0.7"
+                                                            />
+
+                                                            {/* Corner vertical wireframe lines */}
+                                                            <line x1={f0.x} y1={f0.y} x2={t0.x} y2={t0.y} stroke="#06b6d4" strokeWidth="1" strokeOpacity="0.5" />
+                                                            <line x1={f1.x} y1={f1.y} x2={t1.x} y2={t1.y} stroke="#06b6d4" strokeWidth="1" strokeOpacity="0.5" />
+                                                            <line x1={f2.x} y1={f2.y} x2={t2.x} y2={t2.y} stroke="#06b6d4" strokeWidth="1" strokeOpacity="0.5" />
+                                                            <line x1={f3.x} y1={f3.y} x2={t3.x} y2={t3.y} stroke="#06b6d4" strokeWidth="1" strokeOpacity="0.5" />
+
+                                                            {/* Floating room tags in 3D */}
+                                                            <text
+                                                                x={c.x}
+                                                                y={c.y - 3}
+                                                                textAnchor="middle"
+                                                                fill="#f1f5f9"
+                                                                fontSize="8"
+                                                                fontWeight="bold"
+                                                                fontFamily="monospace"
+                                                            >
+                                                                {room.type.toUpperCase()}
+                                                            </text>
+                                                            <text
+                                                                x={c.x}
+                                                                y={c.y + 6}
+                                                                textAnchor="middle"
+                                                                fill={room.color}
+                                                                fontSize="6.5"
+                                                                fontWeight="bold"
+                                                                fontFamily="monospace"
+                                                            >
+                                                                {room.area} SQFT
+                                                            </text>
+                                                        </g>
+                                                    );
+                                                })}
+                                            </svg>
+
                                             {/* Hover info overlay to highlight that only structures are generated */}
-                                            <div className="absolute bottom-3 left-3 right-3 bg-stone-950/80 border border-stone-800 rounded-xl p-2.5 flex items-start gap-2 backdrop-blur-sm pointer-events-none">
-                                                <Info size={15} className="text-amber-500 shrink-0 mt-0.5" />
-                                                <p className="text-[10px] text-stone-400 leading-normal">
-                                                    <strong>Structural Output:</strong> This model renders the load-bearing partitions, door alignments, and room bounds. Internal furniture is not included.
+                                            <div className="absolute bottom-3 left-3 right-3 bg-stone-950/80 border border-stone-850 rounded-xl p-2 flex items-start gap-1.5 backdrop-blur-sm pointer-events-none z-20">
+                                                <Info size={12} className="text-cyan-400 shrink-0 mt-0.5" />
+                                                <p className="text-[9px] text-stone-400 leading-normal">
+                                                    <strong>Dynamic 3D Hologram:</strong> Real-time wireframe projections of load-bearing walls and partitions compiled from the active configurations.
                                                 </p>
                                             </div>
                                         </div>
