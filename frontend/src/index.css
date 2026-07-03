@@ -7,3 +7,45 @@ body {
   background-color: #fbfaf8; /* Cream/Stone background */
   color: #1c1917; /* Stone 900 */
 }
+
+@layer components {
+  .page-container {
+    @apply min-h-screen bg-[#fafaf9] pt-24 pb-16 px-4 sm:px-6 lg:px-8;
+  }
+  
+  .content-grid {
+    @apply max-w-7xl mx-auto grid gap-8 items-start;
+  }
+  
+  .glass-card {
+    @apply bg-white/80 border border-stone-200/60 rounded-3xl shadow-xl backdrop-blur-md p-6 relative overflow-hidden;
+  }
+  
+  .glass-card-interactive {
+    @apply glass-card cursor-pointer transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:border-stone-300/80;
+  }
+  
+  .metric-card {
+    @apply bg-white/60 border border-stone-200/50 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow text-center flex flex-col items-center justify-center;
+  }
+  
+  .input-field {
+    @apply w-full p-3 bg-stone-50/50 border border-stone-200 rounded-xl focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none transition-shadow text-xs font-mono;
+  }
+  
+  .btn-primary {
+    @apply px-5 py-2.5 bg-charcoal text-white rounded-xl hover:bg-stone-800 transition-all duration-200 font-medium shadow-md text-xs active:scale-95 flex items-center justify-center gap-2;
+  }
+  
+  .btn-secondary {
+    @apply px-5 py-2.5 bg-white hover:bg-stone-50 text-stone-600 border border-stone-200 rounded-xl transition-all duration-200 font-medium text-xs active:scale-95 flex items-center justify-center gap-2;
+  }
+  
+  .icon-btn {
+    @apply p-2.5 bg-white/80 hover:bg-white text-stone-500 hover:text-charcoal border border-stone-200/40 rounded-xl shadow-sm hover:scale-105 active:scale-95 transition-all flex items-center justify-center;
+  }
+  
+  .badge-premium {
+    @apply px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider;
+  }
+}

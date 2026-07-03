@@ -187,9 +187,9 @@ const Profile = () => {
     };
 
     if (loading) return (
-        <div className="pt-24 px-6 md:px-12 min-h-screen bg-cream">
+        <div className="page-container">
             <div className="max-w-6xl mx-auto">
-                <div className="bg-white rounded-2xl p-8 shadow-sm border border-stone-100 flex flex-col md:flex-row items-center md:items-start gap-8">
+                <div className="glass-card flex flex-col md:flex-row items-center md:items-start gap-8">
                     <Skeleton className="w-32 h-32 rounded-full" />
                     <div className="flex-1 w-full flex flex-col items-center md:items-start space-y-4">
                         <Skeleton className="h-8 w-48" />
@@ -209,27 +209,27 @@ const Profile = () => {
             </div>
         </div>
     );
-
+ 
     return (
-        <div className="pt-24 px-6 md:px-12 min-h-screen bg-cream">
+        <div className="page-container">
             <div className="max-w-6xl mx-auto">
                 {/* Header Section */}
                 <div
                     ref={profileHeaderRef}
-                    className="bg-white rounded-2xl p-8 shadow-sm border border-stone-150/80 flex flex-col md:flex-row items-center md:items-start gap-8 opacity-0"
+                    className="glass-card flex flex-col md:flex-row items-center md:items-start gap-8 opacity-0"
                 >
                     <div className="relative group cursor-pointer" onClick={() => document.getElementById('avatar-upload').click()}>
-                        <div className={`w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-stone-250 ${uploadingAvatar ? 'opacity-50' : 'group-hover:opacity-80'} transition-opacity`}>
+                        <div className={`w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-stone-200 ${uploadingAvatar ? 'opacity-50' : 'group-hover:opacity-85'} transition-opacity`}>
                             {currentUser.photoURL ? (
                                 <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-charcoal text-white text-4xl font-light">
+                                <div className="w-full h-full flex items-center justify-center bg-charcoal text-white text-4xl font-light font-mono">
                                     {currentUser.email?.[0].toUpperCase()}
                                 </div>
                             )}
                         </div>
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-white text-xs font-medium bg-black/50 px-2 py-1 rounded">Change</span>
+                            <span className="text-white text-[10px] font-bold uppercase tracking-wider bg-black/60 px-2.5 py-1 rounded-xl">Change</span>
                         </div>
                         <input
                             type="file"
@@ -240,175 +240,179 @@ const Profile = () => {
                             disabled={uploadingAvatar}
                         />
                     </div>
-
+ 
                     <div className="flex-1 text-center md:text-left">
-                        <h1 className="text-3xl font-light text-charcoal mb-2">
+                        <h1 className="text-2xl font-light text-charcoal mb-2">
                             {currentUser.displayName || "Architect"}
                         </h1>
-                        <div className="flex flex-col md:flex-row gap-4 text-stone-500 text-sm md:items-center">
+                        <div className="flex flex-col md:flex-row gap-4 text-stone-500 text-xs md:items-center font-mono">
                             <span className="flex items-center gap-2 justify-center md:justify-start">
-                                <Mail size={16} /> {currentUser.email}
+                                <Mail size={14} className="text-stone-400" /> {currentUser.email}
                             </span>
                             <span className="hidden md:inline text-stone-300">•</span>
                             <span className="flex items-center gap-2 justify-center md:justify-start">
-                                <Calendar size={16} /> Member since {currentUser.metadata.creationTime ? new Date(currentUser.metadata.creationTime).toLocaleDateString() : 'Recently'}
+                                <Calendar size={14} className="text-stone-400" /> Joined {currentUser.metadata.creationTime ? new Date(currentUser.metadata.creationTime).toLocaleDateString() : 'Recently'}
                             </span>
                         </div>
                         {mongoUser && (
-                            <div className="mt-4 inline-block bg-stone-100 text-charcoal px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider">
-                                Current Plan: {mongoUser.role}
+                            <div className="mt-4 inline-block bg-stone-100 border border-stone-200/50 text-charcoal px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono">
+                                Role: {mongoUser.role}
                             </div>
                         )}
                     </div>
                 </div>
-
+ 
                 {/* Tabs */}
                 <div className="flex gap-6 mt-8 border-b border-stone-200">
                     <button
                         onClick={() => setActiveTab('overview')}
-                        className={`pb-4 flex items-center gap-2 transition-colors ${activeTab === 'overview' ? 'border-b-2 border-charcoal text-charcoal' : 'text-stone-500 hover:text-charcoal'}`}
+                        className={`pb-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 ${activeTab === 'overview' ? 'border-charcoal text-charcoal' : 'border-transparent text-stone-400 hover:text-charcoal'}`}
                     >
-                        <LayoutTemplate size={18} /> Overview
+                        <LayoutTemplate size={14} /> Overview
                     </button>
                     <button
                         onClick={() => setActiveTab('settings')}
-                        className={`pb-4 flex items-center gap-2 transition-colors ${activeTab === 'settings' ? 'border-b-2 border-charcoal text-charcoal' : 'text-stone-500 hover:text-charcoal'}`}
+                        className={`pb-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 ${activeTab === 'settings' ? 'border-charcoal text-charcoal' : 'border-transparent text-stone-400 hover:text-charcoal'}`}
                     >
-                        <SettingsIcon size={18} /> Settings
+                        <SettingsIcon size={14} /> Settings
                     </button>
                 </div>
-
+ 
                 {/* Content */}
                 <div className="mt-8 mb-12">
                     {activeTab === 'overview' ? (
-                        <div>
-                            <div ref={statsGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div className="space-y-8">
+                            <div ref={statsGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <StatCard icon={<Box />} label="Total Designs" value={stats.totalDesigns} />
-                                <StatCard icon={<Activity />} label="Avg. Efficiency" value={`${stats.avgScore}%`} />
+                                <StatCard icon={<Activity />} label="Avg. Score" value={`${stats.avgScore}%`} />
                                 <StatCard icon={<Box />} label="Rooms Planned" value={stats.totalRooms} />
                             </div>
-
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-2xl font-light text-charcoal">Recent Activity</h2>
-                                <Link to="/my-designs" className="text-stone-500 hover:text-charcoal flex items-center gap-1 text-sm font-medium">
-                                    View All <ArrowRight size={16} />
+ 
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-xl font-light text-charcoal">Recent Activity</h2>
+                                <Link to="/my-designs" className="text-stone-500 hover:text-charcoal flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
+                                    View All <ArrowRight size={14} />
                                 </Link>
                             </div>
-
+ 
                             <div ref={activityGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {designs.slice(0, 3).map((design, idx) => (
-                                    <Card key={idx} className="opacity-0">
-                                        <CardContent className="p-5">
-                                            <h3 className="font-semibold text-charcoal truncate">{design.prompt || "Untitled Project"}</h3>
-                                            <p className="text-xs text-stone-400 mt-2 font-medium">{formatDistanceToNow(new Date(design.created_at), { addSuffix: true })}</p>
-                                        </CardContent>
-                                    </Card>
+                                    <div key={idx} className="glass-card-interactive opacity-0">
+                                        <h3 className="font-semibold text-charcoal truncate">{design.prompt || "Untitled Project"}</h3>
+                                        <p className="text-[10px] font-mono text-stone-400 mt-2 font-medium">{formatDistanceToNow(new Date(design.created_at), { addSuffix: true })}</p>
+                                    </div>
                                 ))}
                                 {designs.length === 0 && (
-                                    <div className="col-span-full py-12 text-center text-stone-500 bg-stone-50 rounded-xl border border-dashed border-stone-200">
-                                        No designs yet. <Link to="/create" className="underline text-charcoal">Create one.</Link>
+                                    <div className="col-span-full py-12 text-center text-xs font-mono text-stone-400 bg-stone-50/50 rounded-3xl border border-dashed border-stone-200">
+                                        No configurations saved yet. <Link to="/create" className="underline font-bold text-stone-700">Start wizard</Link>
                                     </div>
                                 )}
                             </div>
                         </div>
                     ) : (
-                        <div ref={settingsFormRef} className="max-w-2xl bg-white p-8 rounded-2xl shadow-sm border border-stone-100">
-                            <h2 className="text-2xl font-light text-charcoal mb-6 opacity-0">Account Settings</h2>
-
+                        <div ref={settingsFormRef} className="max-w-2xl glass-card">
+                            <h2 className="text-xl font-light text-charcoal mb-6 opacity-0">Profile Configuration</h2>
+ 
                             {message.text && (
-                                <div className="mb-6 p-4 rounded-lg text-sm border opacity-0 bg-stone-50 border-stone-100">
+                                <div className={`mb-6 p-4 rounded-xl text-xs font-mono border opacity-0 ${message.type === 'success' ? 'bg-stone-50 text-stone-700 border-stone-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
                                     {message.text}
                                 </div>
                             )}
-
+ 
                             <form onSubmit={handleUpdateProfile} className="space-y-6 opacity-0">
                                 <div>
-                                    <label className="block text-sm font-medium text-stone-700 mb-2">Display Name</label>
-                                    <Input
+                                    <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3">Overview</h3>
+                                    <label className="block text-xs font-bold text-stone-600 mb-2">Display Name</label>
+                                    <input
+                                        type="text"
                                         value={displayName}
                                         onChange={(e) => setDisplayName(e.target.value)}
                                         placeholder="Your Name"
+                                        className="input-field"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-stone-700 mb-2">Email Address (Read-only)</label>
-                                    <Input
+                                    <label className="block text-xs font-bold text-stone-600 mb-2">Email Address (Read-only)</label>
+                                    <input
                                         type="email"
                                         value={currentUser.email}
                                         readOnly
                                         disabled
-                                        className="bg-stone-50"
+                                        className="input-field bg-stone-100/50 text-stone-400 cursor-not-allowed"
                                     />
                                 </div>
+                                
+                                <hr className="border-stone-150 my-6" />
+
                                 <div>
-                                    <label className="block text-sm font-medium text-stone-700 mb-2">New Password (leave blank to keep current)</label>
-                                    <Input
+                                    <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3">Preferences</h3>
+                                    <label className="block text-xs font-bold text-stone-600 mb-2">New Password (leave blank to keep current)</label>
+                                    <input
                                         type="password"
                                         value={newPassword}
                                         onChange={(e) => setNewPassword(e.target.value)}
                                         placeholder="••••••••"
+                                        className="input-field font-mono"
                                     />
                                 </div>
-
-                                <Button type="submit">
+ 
+                                <button type="submit" className="btn-primary">
                                     Save Changes
-                                </Button>
+                                </button>
                             </form>
-
+ 
                             <hr className="my-8 border-stone-200 opacity-0" />
-
+ 
                             <div className="opacity-0">
-                                <h3 className="text-red-600 font-medium mb-2 flex items-center gap-2"><AlertTriangle size={18} /> Danger Zone</h3>
-                                <p className="text-sm text-stone-500 mb-4">Once you delete your account, there is no going back. Please be certain.</p>
-                                <Button
-                                    variant="destructive"
+                                <h3 className="text-red-600 font-bold text-xs uppercase tracking-wider mb-2 flex items-center gap-2">
+                                    <AlertTriangle size={14} /> Danger Zone
+                                </h3>
+                                <p className="text-xs text-stone-500 mb-4">Once you delete your account, there is no going back. All stored layouts will be deleted permanently.</p>
+                                <button
                                     onClick={(e) => { e.preventDefault(); setShowDeleteModal(true); }}
+                                    className="btn-secondary border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50/50"
                                 >
                                     Delete Account
-                                </Button>
+                                </button>
                             </div>
                         </div>
                     )}
                 </div>
             </div>
-
+ 
             {/* Delete Confirmation Modal */}
             <AnimatePresence>
                 {showDeleteModal && (
                     <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                         className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
                     >
-                        <motion.div
-                            initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-                            className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl"
-                        >
-                            <h3 className="text-xl font-medium text-charcoal mb-4">Delete Account?</h3>
-                            <p className="text-stone-500 mb-6">Are you sure you want to permanently delete your account? All your data will be lost.</p>
-                            <div className="flex gap-4 justify-end mt-6">
-                                <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
-                                <Button variant="destructive" onClick={handleDeleteAccount}>Yes, Delete</Button>
-                            </div>
-                        </motion.div>
+                         <motion.div
+                             initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+                             className="glass-card max-w-md w-full shadow-2xl border border-stone-200"
+                         >
+                             <h3 className="text-lg font-light text-charcoal mb-3">Delete Account?</h3>
+                             <p className="text-xs text-stone-500 mb-6">Are you sure you want to permanently delete your account? This action cannot be undone.</p>
+                             <div className="flex gap-4 justify-end">
+                                 <button className="btn-secondary" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+                                 <button className="btn-primary bg-red-600 hover:bg-red-700 border-red-600" onClick={handleDeleteAccount}>Yes, Delete Account</button>
+                             </div>
+                         </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
         </div>
     );
-};
-
-const StatCard = ({ icon, label, value }) => (
-    <Card className="opacity-0">
-        <CardContent className="flex items-center gap-4 p-6 text-left w-full h-full">
-            <div className="p-3 bg-stone-50 text-stone-900 rounded-lg shadow-sm border border-stone-150">
-                {React.cloneElement(icon, { size: 24 })}
-            </div>
-            <div>
-                <div className="text-2xl font-light text-stone-900">{value}</div>
-                <div className="text-xs text-stone-500 uppercase tracking-wide font-medium">{label}</div>
-            </div>
-        </CardContent>
-    </Card>
-);
+ };
+ 
+ const StatCard = ({ icon, label, value }) => (
+     <div className="metric-card opacity-0">
+         <div className="p-3 bg-stone-50/50 text-stone-900 border border-stone-200/60 rounded-2xl mb-3 shadow-sm flex items-center justify-center">
+             {React.cloneElement(icon, { size: 22 })}
+         </div>
+         <div className="text-3xl font-light text-stone-900 font-mono tracking-tight mb-1">{value}</div>
+         <div className="text-[10px] text-stone-400 uppercase tracking-wider font-bold">{label}</div>
+     </div>
+ );
 
 export default Profile;

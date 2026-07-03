@@ -82,14 +82,21 @@ const Login = () => {
         <div className="flex items-center justify-center min-h-screen bg-cream px-4">
             <div
                 ref={cardRef}
-                className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center border border-stone-200/50 opacity-0"
+                className="glass-card max-w-md w-full text-center opacity-0"
             >
                 <div ref={formRef}>
-                    <h2 className="text-3xl font-light text-charcoal mb-2">{isSignUp ? "Create Account" : "Welcome Back"}</h2>
-                    <p className="text-stone-500 mb-8 text-sm">{isSignUp ? "Sign up to start designing" : "Sign in to access your designs"}</p>
+                    <div className="flex items-center justify-center mb-6">
+                        <span className="text-sm font-bold tracking-tight text-charcoal bg-stone-50 border border-stone-200/60 px-3.5 py-1.5 rounded-2xl flex items-center gap-1.5 shadow-sm font-mono">
+                            <span className="w-2 h-2 rounded-full bg-charcoal inline-block"></span>
+                            VOX<span className="font-light text-stone-500">ASSIST</span>
+                        </span>
+                    </div>
+
+                    <h2 className="text-2xl font-light text-charcoal mb-1.5">{isSignUp ? "Create Account" : "Welcome Back"}</h2>
+                    <p className="text-stone-500 mb-6 text-xs">{isSignUp ? "Sign up to start designing dynamic layouts" : "Sign in to access your custom configurations"}</p>
 
                     {error && (
-                        <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 text-left">
+                        <div className="mb-4 p-3 bg-red-50 text-red-600 text-xs rounded-xl border border-red-100 text-left font-mono">
                             {error}
                         </div>
                     )}
@@ -101,7 +108,7 @@ const Login = () => {
                                 placeholder="Email address"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full p-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-stone-400 outline-none transition-shadow text-sm"
+                                className="input-field"
                                 required
                             />
                         </div>
@@ -111,7 +118,7 @@ const Login = () => {
                                 placeholder="Password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full p-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-stone-400 outline-none transition-shadow text-sm"
+                                className="input-field"
                                 required
                             />
                             {!isSignUp && (
@@ -119,7 +126,7 @@ const Login = () => {
                                     <button
                                         type="button"
                                         onClick={handleResetPassword}
-                                        className="text-xs text-stone-500 hover:text-stone-800 transition-colors"
+                                        className="text-[10px] font-mono text-stone-400 hover:text-stone-700 transition-colors"
                                     >
                                         Forgot password?
                                     </button>
@@ -128,7 +135,7 @@ const Login = () => {
                         </div>
                         <button
                             type="submit"
-                            className="w-full py-3 bg-charcoal text-white rounded-xl hover:bg-stone-800 transition-colors font-medium shadow-md text-sm mt-2"
+                            className="btn-primary w-full py-3 mt-2"
                         >
                             {isSignUp ? "Sign Up" : "Sign In"}
                         </button>
@@ -136,26 +143,26 @@ const Login = () => {
 
                     <div className="relative mb-6">
                         <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-stone-200"></div>
+                            <div className="w-full border-t border-stone-150"></div>
                         </div>
-                        <div className="relative flex justify-center text-xs">
-                            <span className="px-3 bg-white text-stone-400 font-mono uppercase tracking-wider">Or continue with</span>
+                        <div className="relative flex justify-center text-[10px]">
+                            <span className="px-3 bg-white/95 rounded-full text-stone-400 font-mono uppercase tracking-wider">Or continue with</span>
                         </div>
                     </div>
 
                     <button
                         onClick={handleGoogleLogin}
-                        className="w-full flex items-center justify-center space-x-3 px-6 py-3 border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors shadow-sm mb-6 bg-stone-50/50"
+                        className="btn-secondary w-full py-3 mb-6 bg-white/80"
                     >
-                        <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
-                        <span className="text-charcoal font-medium text-sm">Google</span>
+                        <img src="https://www.google.com/favicon.ico" alt="Google" className="w-3.5 h-3.5" />
+                        <span className="text-charcoal font-semibold text-xs">Google Account</span>
                     </button>
 
-                    <p className="text-sm text-stone-500">
+                    <p className="text-xs text-stone-500">
                         {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
                         <button
                             onClick={() => setIsSignUp(!isSignUp)}
-                            className="text-stone-800 font-semibold hover:underline"
+                            className="text-stone-800 font-bold hover:underline"
                         >
                             {isSignUp ? "Sign In" : "Sign Up"}
                         </button>

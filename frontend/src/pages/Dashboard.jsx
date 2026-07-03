@@ -927,15 +927,15 @@ const Dashboard = () => {
                                      {outputTab === 'blueprint' ? (
                                         <div className="relative w-full h-full max-h-[340px] flex items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-2">
                                             {/* Dynamic SVG Blueprint Canvas */}
-                                            <svg viewBox="0 0 480 280" className="w-full h-full object-contain">
+                                            <svg viewBox="-10 -10 500 300" className="w-full h-full object-contain">
                                                 {/* Grid Background */}
                                                 <defs>
                                                     <pattern id="blueprint-grid" width="20" height="20" patternUnits="userSpaceOnUse">
                                                         <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(0, 0, 0, 0.03)" strokeWidth="1" />
                                                     </pattern>
                                                 </defs>
-                                                <rect width="100%" height="100%" fill="#fafaf9" />
-                                                <rect width="100%" height="100%" fill="url(#blueprint-grid)" />
+                                                <rect x="-10" y="-10" width="500" height="300" fill="#fafaf9" />
+                                                <rect x="-10" y="-10" width="500" height="300" fill="url(#blueprint-grid)" />
 
                                                 {/* Rooms */}
                                                 {computedRects.map((room) => (
@@ -1023,9 +1023,15 @@ const Dashboard = () => {
 
                                                 {/* Door swings for horizontal partitions */}
                                                 {computedRects.map((room) => {
-                                                    const nextRoom = computedRects.find(r => r.x === room.x && Math.abs(r.y - (room.y + room.height)) < 1);
+                                                    const nextRoom = computedRects.find(r => 
+                                                        Math.abs(r.y - (room.y + room.height)) < 1 &&
+                                                        Math.max(r.x, room.x) < Math.min(r.x + r.width, room.x + room.width)
+                                                    );
                                                     if (nextRoom) {
-                                                        const doorX = room.x + room.width / 3;
+                                                        const overlapStart = Math.max(room.x, nextRoom.x);
+                                                        const overlapEnd = Math.min(room.x + room.width, nextRoom.x + nextRoom.width);
+                                                        const overlapLength = overlapEnd - overlapStart;
+                                                        const doorX = overlapStart + overlapLength / 3;
                                                         const doorW = 16;
                                                         return (
                                                             <g key={`door-h-${room.id}`}>
@@ -1050,7 +1056,7 @@ const Dashboard = () => {
                                                             <g key="door-v-main">
                                                                 <line x1={doorX} y1={doorY - doorW/2} x2={doorX} y2={doorY + doorW/2} stroke="#fafaf9" strokeWidth="4.5" />
                                                                 <line x1={doorX} y1={doorY - doorW/2} x2={doorX - doorW} y2={doorY - doorW/2} stroke="#44403c" strokeWidth="1.5" />
-                                                                <path d={`M ${doorX - doorW} ${doorY - doorW/2} A ${doorW} ${doorW} 0 0 1 ${doorX} ${doorY + doorW/2}`} fill="none" stroke="#78716c" strokeWidth="1" strokeDasharray="2 2" />
+                                                                <path d={`M ${doorX - doorW} ${doorY - doorW/2} A ${doorW} ${doorW} 0 0 0 ${doorX} ${doorY + doorW/2}`} fill="none" stroke="#78716c" strokeWidth="1" strokeDasharray="2 2" />
                                                             </g>
                                                         );
                                                     }
