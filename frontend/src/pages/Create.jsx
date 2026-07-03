@@ -1194,11 +1194,14 @@ const Create = () => {
                 </div>
 
                 {!modelUrl && step !== 3 && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-stone-455 pointer-events-none font-mono text-xs">
-                        <div className="w-16 h-16 border border-stone-200/80 rounded-full flex items-center justify-center mb-4 bg-white shadow-sm">
-                            <span className="text-sm font-light text-stone-550">3D</span>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none bg-[#fbfbf9] bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] bg-[size:32px_32px]">
+                        <div className="flex flex-col items-center justify-center text-stone-450 p-6 glass-card border border-stone-200/50 max-w-xs text-center shadow-lg bg-white/90">
+                            <div className="w-12 h-12 border border-stone-200/80 rounded-full flex items-center justify-center mb-3 bg-white shadow-inner">
+                                <span className="text-xs font-bold text-stone-500 font-mono">3D</span>
+                            </div>
+                            <h4 className="text-xs font-bold text-stone-700 mb-1 uppercase tracking-wider font-mono">3D Viewport</h4>
+                            <p className="text-[10px] text-stone-500 font-light font-sans leading-relaxed">Complete the Design Wizard inputs and compile to generate your interactive 3D layout here.</p>
                         </div>
-                        <p>Complete the wizard to generate a layout.</p>
                     </div>
                 )}
             </div>

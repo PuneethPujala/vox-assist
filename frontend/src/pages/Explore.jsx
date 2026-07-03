@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import gsap from 'gsap';
+import { Skeleton } from '../components/ui/skeleton';
 
 const Explore = () => {
     const [designs, setDesigns] = useState([]);
@@ -116,9 +117,29 @@ const Explore = () => {
                         className="bg-white/85 border border-stone-200/60 rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 flex flex-col h-full opacity-0 overflow-hidden backdrop-blur-md cursor-pointer"
                     >
                         {/* Thumbnail Placeholder */}
-                        <div className="h-48 bg-stone-50/50 flex items-center justify-center relative overflow-hidden group border-b border-stone-150">
-                            <div className="card-thumb w-full h-full bg-stone-50/30 flex items-center justify-center transition-transform duration-500">
-                                <span className="text-stone-300 text-xs font-bold font-mono tracking-widest uppercase">3D Mesh Preview</span>
+                        <div className="h-48 bg-[#fbfbf9] bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[size:18px_18px] flex items-center justify-center relative overflow-hidden group border-b border-stone-150">
+                            <div className="card-thumb w-full h-full flex items-center justify-center transition-transform duration-500">
+                                {design.spec_data?.rooms ? (
+                                    <div className="flex gap-2 items-center justify-center w-full px-6">
+                                        {design.spec_data.rooms.slice(0, 4).map((r, i) => (
+                                            <div 
+                                                key={i} 
+                                                className="border rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] flex items-center justify-center text-[8px] font-bold font-mono"
+                                                style={{ 
+                                                    width: Math.max(34, (r.size?.[0] || 12) * 2.8), 
+                                                    height: Math.max(34, (r.size?.[1] || 12) * 2.8),
+                                                    backgroundColor: `${r.color || '#e5e7eb'}18`,
+                                                    borderColor: r.color || '#d6d3d1',
+                                                    color: r.color || '#78716c'
+                                                }}
+                                            >
+                                                <span className="opacity-60">{r.type.substring(0, 2).toUpperCase()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <span className="text-stone-300 text-xs font-bold font-mono tracking-widest uppercase">3D Mesh Preview</span>
+                                )}
                             </div>
  
                             <div className="absolute inset-0 bg-black/30 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-250 flex items-center justify-center">

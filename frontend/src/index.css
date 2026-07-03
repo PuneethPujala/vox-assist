@@ -1,16 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
-  font-family: 'Inter', sans-serif;
-  background-color: #fbfaf8; /* Cream/Stone background */
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  background-color: #fafaf9; /* Cream/Stone background */
   color: #1c1917; /* Stone 900 */
 }
 
 @layer components {
   .page-container {
-    @apply min-h-screen bg-[#fafaf9] pt-24 pb-16 px-4 sm:px-6 lg:px-8;
+    @apply min-h-screen pt-24 pb-16 px-4 sm:px-6 lg:px-8 relative overflow-hidden;
+    background: radial-gradient(circle at 10% 20%, rgba(253, 244, 215, 0.35) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(224, 231, 255, 0.3) 0%, transparent 50%),
+                #fafaf9;
   }
   
   .content-grid {
@@ -18,11 +23,11 @@ body {
   }
   
   .glass-card {
-    @apply bg-white/80 border border-stone-200/60 rounded-3xl shadow-xl backdrop-blur-md p-6 relative overflow-hidden;
+    @apply bg-white/85 border border-stone-200/60 rounded-[32px] shadow-[0_8px_32px_0_rgba(28,25,23,0.04)] backdrop-blur-md p-6 relative overflow-hidden;
   }
   
   .glass-card-interactive {
-    @apply glass-card cursor-pointer transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:border-stone-300/80;
+    @apply glass-card cursor-pointer transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_48px_0_rgba(28,25,23,0.08)] hover:border-stone-300/80;
   }
   
   .metric-card {

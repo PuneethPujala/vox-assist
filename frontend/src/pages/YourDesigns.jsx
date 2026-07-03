@@ -178,16 +178,28 @@ const YourDesigns = () => {
                         onMouseLeave={handleCardMouseLeave}
                         className="bg-white/85 border border-stone-200/60 rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 relative group flex flex-col h-full opacity-0 overflow-hidden backdrop-blur-md cursor-pointer"
                     >
-                        {/* Thumbnail Generator/Placeholder */}
-                        <div className="h-40 bg-stone-50/50 flex flex-col items-center justify-center relative overflow-hidden border-b border-stone-150">
-                            <span className="text-stone-300 text-[10px] font-bold tracking-widest uppercase mb-2 font-mono">3D Mesh View</span>
-                            {design.spec_data?.rooms && (
-                                <div className="flex gap-1 items-center justify-center">
-                                    {design.spec_data.rooms.slice(0, 3).map((r, i) => (
-                                        <div key={i} className="w-8 h-8 bg-stone-200/50 border border-stone-300/60 rounded-lg shadow-sm"
-                                            style={{ width: Math.max(16, (r.size?.[0] || 12) * 2), height: Math.max(16, (r.size?.[1] || 12) * 2) }}></div>
+                        {/* Thumbnail Generator/Blueprint Grid */}
+                        <div className="h-40 bg-[#fbfbf9] bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[size:16px_16px] flex flex-col items-center justify-center relative overflow-hidden border-b border-stone-150">
+                            {design.spec_data?.rooms ? (
+                                <div className="flex gap-2 items-center justify-center w-full px-4 relative z-0">
+                                    {design.spec_data.rooms.slice(0, 4).map((r, i) => (
+                                        <div 
+                                            key={i} 
+                                            className="border rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] flex items-center justify-center text-[7px] font-bold font-mono transition-transform duration-300 group-hover:scale-105"
+                                            style={{ 
+                                                width: Math.max(28, (r.size?.[0] || 12) * 2.2), 
+                                                height: Math.max(28, (r.size?.[1] || 12) * 2.2),
+                                                backgroundColor: `${r.color || '#e5e7eb'}18`,
+                                                borderColor: r.color || '#d6d3d1',
+                                                color: r.color || '#78716c'
+                                            }}
+                                        >
+                                            <span className="opacity-60">{r.type.substring(0, 2).toUpperCase()}</span>
+                                        </div>
                                     ))}
                                 </div>
+                            ) : (
+                                <span className="text-stone-300 text-[10px] font-bold tracking-widest uppercase mb-2 font-mono">3D Mesh View</span>
                             )}
  
                             {/* Hover Actions Overlay */}
