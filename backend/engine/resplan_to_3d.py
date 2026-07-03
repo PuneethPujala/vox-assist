@@ -20,7 +20,7 @@ DOOR_THICKNESS = 0.05    # Door panel thickness (5cm) - Thinner than walls
 # Wall/door colors - Modern Clean Look
 WALL_COLOR = "#F5F5F5"         # White Smoke walls
 DOOR_FRAME_COLOR = "#5D4037"   # Dark Wood (Walnut)
-DOOR_PANEL_COLOR = "#D7CCC8"   # Light Wood / Beige
+DOOR_PANEL_COLOR = "#8D6E63"   # Rich Wood (Walnut)
 GROUND_COLOR = "#E0E0E0"       # Light Grey Ground
 
 # Refined room color palette (Modern Architectural Pastels)
@@ -249,7 +249,7 @@ def add_box_to_faces(all_faces, x1, x2, y1, y2, z1, z2, color, alpha=1.0):
     all_faces.append({"vertices": [c100, c110, c111, c101], "color": color, "alpha": alpha})
 
 
-def _place_room_furniture(all_faces, name, poly):
+def _place_room_furniture(all_faces, name, poly, door_polys=None):
     if poly.is_empty: return
     
     # Bounding box and dimensions
@@ -304,26 +304,67 @@ def _place_room_furniture(all_faces, name, poly):
         add_box_to_faces(all_faces, cx + bw + 0.05*scale, cx + bw + 0.25*scale, cy - bh - 0.05*scale, cy - bh + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.35 * scale, "#CBD5E1")
         
     elif "bathroom" in name or "bath" in name or "toilet" in name:
+        # Check where the door is
+        door_near_top = False
+        if door_polys:
+            for door in door_polys:
+                if door.intersects(poly.buffer(0.1)):
+                    dy = door.centroid.y
+                    if abs(dy - maxy) < abs(dy - miny):
+                        door_near_top = True
+
         # Tub
         if w > h:
             add_box_to_faces(all_faces, minx + 0.1, minx + 1.4*scale, cy - 0.4*scale, cy + 0.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
             add_box_to_faces(all_faces, minx + 0.15, minx + 1.3*scale, cy - 0.3*scale, cy + 0.3*scale, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
         else:
-            add_box_to_faces(all_faces, cx - 0.4*scale, cx + 0.4*scale, miny + 0.1, miny + 1.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
-            add_box_to_faces(all_faces, cx - 0.3*scale, cx + 0.3*scale, miny + 0.15, miny + 1.3*scale, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
+            tub_y_min = miny + 0.1 if door_near_top else maxy - 1.4*scale
+            tub_y_max = miny + 1.4*scale if door_near_top else maxy - 0.1
+            add_box_to_faces(all_faces, cx - 0.4*scale, cx + 0.4*scale, tub_y_min, tub_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
+            add_box_to_faces(all_faces, cx - 0.3*scale, cx + 0.3*scale, tub_y_min + 0.05, tub_y_max - 0.05, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
             
+        # Place toilet and vanity opposite to the door (if door near top, place at bottom)
+        if door_near_top:
+            tx, ty = cx + 0.5*scale, miny + 0.4*scale
+            bx, by = cx - 0.5*scale, miny + 0.4*scale
+        else:
+            tx, ty = cx + 0.5*scale, maxy - 0.4*scale
+            bx, by = cx - 0.5*scale, maxy - 0.4*scale
+
         # Toilet
-        tx, ty = cx, maxy - 0.4*scale
         add_box_to_faces(all_faces, tx - 0.15*scale, tx + 0.15*scale, ty - 0.25*scale, ty + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.38*scale, "#FFFFFF")
         add_box_to_faces(all_faces, tx - 0.18*scale, tx + 0.18*scale, ty + 0.15*scale, ty + 0.25*scale, FLOOR_THICKNESS + 0.38*scale, FLOOR_THICKNESS + 0.7*scale, "#FFFFFF")
+
+        # Wash Basin / Vanity Cabinet
+        add_box_to_faces(all_faces, bx - 0.35*scale, bx + 0.35*scale, by - 0.25*scale, by + 0.25*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.8*scale, "#8D6E63")
+        add_box_to_faces(all_faces, bx - 0.25*scale, bx + 0.25*scale, by - 0.18*scale, by + 0.18*scale, FLOOR_THICKNESS + 0.8*scale, FLOOR_THICKNESS + 0.85*scale, "#FFFFFF")
+        add_box_to_faces(all_faces, bx - 0.03*scale, bx + 0.03*scale, by + 0.12*scale, by + 0.18*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.95*scale, "#94A3B8")
         
     elif "kitchen" in name:
-        # Counter along one wall
-        add_box_to_faces(all_faces, minx + 0.1, maxx - 0.1, maxy - 0.65*scale, maxy - 0.1, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85*scale, "#E2E8F0")
+        # Check if there is a door near the top wall (maxy) or bottom wall (miny)
+        door_near_bottom = False
+        if door_polys:
+            for door in door_polys:
+                if door.intersects(poly.buffer(0.1)):
+                    dy = door.centroid.y
+                    if abs(dy - miny) < abs(dy - maxy):
+                        door_near_bottom = True
+
+        if door_near_bottom:
+            counter_y_min, counter_y_max = maxy - 0.65*scale, maxy - 0.1
+            sink_y_min, sink_y_max = maxy - 0.55*scale, maxy - 0.2*scale
+            stove_y_min, stove_y_max = maxy - 0.55*scale, maxy - 0.2*scale
+        else:
+            counter_y_min, counter_y_max = miny + 0.1, miny + 0.65*scale
+            sink_y_min, sink_y_max = miny + 0.2*scale, miny + 0.55*scale
+            stove_y_min, stove_y_max = miny + 0.2*scale, miny + 0.55*scale
+
+        # Counter along selected wall
+        add_box_to_faces(all_faces, minx + 0.1, maxx - 0.1, counter_y_min, counter_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85*scale, "#E2E8F0")
         # Sink
-        add_box_to_faces(all_faces, cx - 0.25*scale, cx + 0.25*scale, maxy - 0.55*scale, maxy - 0.2*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.87*scale, "#94A3B8")
+        add_box_to_faces(all_faces, cx - 0.25*scale, cx + 0.25*scale, sink_y_min, sink_y_max, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.87*scale, "#94A3B8")
         # Stove
-        add_box_to_faces(all_faces, cx + 0.6*scale, cx + 1.1*scale, maxy - 0.55*scale, maxy - 0.2*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.88*scale, "#1E293B")
+        add_box_to_faces(all_faces, cx + 0.6*scale, cx + 1.1*scale, stove_y_min, stove_y_max, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.88*scale, "#1E293B")
         
         # Island
         if h > 3.0:
@@ -438,7 +479,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
             all_faces.append({"vertices": f, "color": color, "alpha": 0.9})
             
         # Add 3D Furniture blocks
-        _place_room_furniture(all_faces, name.lower(), poly)
+        _place_room_furniture(all_faces, name.lower(), poly, door_polygons)
 
     # 3. Build Wall Topology
     print(" Building wall topology...")
@@ -532,7 +573,6 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                                      
                                      door_poly = Polygon([tuple(c1), tuple(c2), tuple(c3), tuple(c4)])
                                      generated_door_panels.append(door_poly)
-
                         # 2. Subtract the Hole from Wall
                         diff = seg.difference(door_shape)
                         if not diff.is_empty:

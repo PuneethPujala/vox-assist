@@ -74,7 +74,14 @@ const SceneExporter = ({ sceneRef, glRef }) => {
     return null;
 };
 
-const Model = ({ url }) => {
+const themeColors = {
+    modernWhite: new THREE.Color("#F5F5F5"), // default
+    softYellow: new THREE.Color("#FEFCE8"),  // soft cream pastel yellow (tailwind yellow-50)
+    classicGrey: new THREE.Color("#D1D5DB"), // light gray (tailwind gray-300)
+    warmCream: new THREE.Color("#FAF8F5"),   // cozy cream
+};
+
+const Model = ({ url, wallTheme }) => {
     const geometry = useLoader(PLYLoader, url);
     const { camera, controls } = useThree();
 
@@ -104,6 +111,45 @@ const Model = ({ url }) => {
             }
         }
     }, [geometry, url, camera, controls]);
+
+    useEffect(() => {
+        if (!geometry) return;
+        const colorsAttr = geometry.attributes.color;
+        if (!colorsAttr) return;
+
+        const originalWallColor = new THREE.Color("#F5F5F5");
+        const targetColor = themeColors[wallTheme] || themeColors.modernWhite;
+
+        // Cache original colors to allow clean switching
+        if (!geometry.userData.originalColors) {
+            geometry.userData.originalColors = colorsAttr.array.slice();
+        }
+
+        const originalArray = geometry.userData.originalColors;
+        const currentArray = colorsAttr.array;
+
+        for (let i = 0; i < originalArray.length; i += 3) {
+            const r = originalArray[i];
+            const g = originalArray[i+1];
+            const b = originalArray[i+2];
+
+            // Match original wall color with tolerance
+            const diffR = Math.abs(r - originalWallColor.r);
+            const diffG = Math.abs(g - originalWallColor.g);
+            const diffB = Math.abs(b - originalWallColor.b);
+
+            if (diffR < 0.01 && diffG < 0.01 && diffB < 0.01) {
+                currentArray[i] = targetColor.r;
+                currentArray[i+1] = targetColor.g;
+                currentArray[i+2] = targetColor.b;
+            } else {
+                currentArray[i] = r;
+                currentArray[i+1] = g;
+                currentArray[i+2] = b;
+            }
+        }
+        colorsAttr.needsUpdate = true;
+    }, [geometry, wallTheme]);
 
     return (
         <group>
@@ -198,6 +244,7 @@ const Create = () => {
     const [inputMode, setInputMode] = useState('manual'); // 'manual' or 'text'
     const [unit, setUnit] = useState('ft'); // 'ft' or 'm'
     const [gridSize, setGridSize] = useState(1.0);
+    const [wallTheme, setWallTheme] = useState('modernWhite');
     const [textPrompt, setTextPrompt] = useState('');
     const [totalAreaConstraint, setTotalAreaConstraint] = useState(1000);
     const [validationError, setValidationError] = useState('');
@@ -1147,7 +1194,7 @@ const Create = () => {
                     <directionalLight position={[10, 20, 10]} intensity={1.5} />
                     <Suspense fallback={null}>
                         <Center>
-                            {modelUrl && <Model url={modelUrl} />}
+                            {modelUrl && <Model url={modelUrl} wallTheme={wallTheme} />}
                             {layoutSpec && layoutData && layoutSpec.rooms.map(room => (
                                 <InteractiveRoom
                                     key={room.id}
@@ -1191,6 +1238,34 @@ const Create = () => {
                             className="w-full h-1 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-charcoal"
                         />
                     </div>
+                    {/* Wall Theme Selector */}
+                    {modelUrl && (
+                        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-md border border-stone-200/60 flex flex-col pointer-events-auto p-3 w-40">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500 mb-2">Wall Color</span>
+                            <div className="flex gap-2 justify-between">
+                                <button
+                                    onClick={() => setWallTheme('modernWhite')}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'modernWhite' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#F5F5F5]`}
+                                    title="Modern White"
+                                />
+                                <button
+                                    onClick={() => setWallTheme('softYellow')}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'softYellow' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#FEFCE8]`}
+                                    title="Soft Yellow"
+                                />
+                                <button
+                                    onClick={() => setWallTheme('classicGrey')}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'classicGrey' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#D1D5DB]`}
+                                    title="Classic Grey"
+                                />
+                                <button
+                                    onClick={() => setWallTheme('warmCream')}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'warmCream' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#FAF8F5]`}
+                                    title="Warm Cream"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {!modelUrl && step !== 3 && (
