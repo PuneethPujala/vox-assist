@@ -223,6 +223,130 @@ def _hex_to_rgb01(hex_color):
     return tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
 
 
+def add_box_to_faces(all_faces, x1, x2, y1, y2, z1, z2, color, alpha=1.0):
+    # Corners
+    c000 = [x1, y1, z1]
+    c100 = [x2, y1, z1]
+    c110 = [x2, y2, z1]
+    c010 = [x1, y2, z1]
+    c001 = [x1, y1, z2]
+    c101 = [x2, y1, z2]
+    c111 = [x2, y2, z2]
+    c011 = [x1, y2, z2]
+    
+    # 6 Faces
+    # Bottom
+    all_faces.append({"vertices": [c000, c010, c110, c100], "color": color, "alpha": alpha})
+    # Top
+    all_faces.append({"vertices": [c001, c101, c111, c011], "color": color, "alpha": alpha})
+    # Front
+    all_faces.append({"vertices": [c000, c100, c101, c001], "color": color, "alpha": alpha})
+    # Back
+    all_faces.append({"vertices": [c110, c010, c011, c111], "color": color, "alpha": alpha})
+    # Left
+    all_faces.append({"vertices": [c010, c000, c001, c011], "color": color, "alpha": alpha})
+    # Right
+    all_faces.append({"vertices": [c100, c110, c111, c101], "color": color, "alpha": alpha})
+
+
+def _place_room_furniture(all_faces, name, poly):
+    if poly.is_empty: return
+    
+    # Bounding box and dimensions
+    minx, miny, maxx, maxy = poly.bounds
+    cx, cy = poly.centroid.x, poly.centroid.y
+    w = maxx - minx
+    h = maxy - miny
+    
+    # Enforce safe margin so furniture doesn't clip walls
+    if w < 2.0 or h < 2.0:
+        return
+        
+    # Scale helper for smaller rooms
+    scale = min(1.0, min(w / 4.0, h / 4.0))
+    
+    if "living" in name or "lounge" in name or "family" in name:
+        # Rug
+        rw, rh = 1.2 * scale, 0.8 * scale
+        add_box_to_faces(all_faces, cx - rw, cx + rw, cy - rh, cy + rh, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E5E7EB")
+        
+        # Couch (aligned back)
+        cw, ch = 1.0 * scale, 0.2 * scale
+        # Cushion
+        add_box_to_faces(all_faces, cx - cw, cx + cw, cy - rh, cy - rh + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4 * scale, "#D1D5DB")
+        # Backrest
+        add_box_to_faces(all_faces, cx - cw, cx + cw, cy - rh, cy - rh + 0.1 * scale, FLOOR_THICKNESS + 0.4 * scale, FLOOR_THICKNESS + 0.7 * scale, "#9CA3AF")
+        # Armrests
+        add_box_to_faces(all_faces, cx - cw - 0.1 * scale, cx - cw, cy - rh, cy - rh + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.5 * scale, "#9CA3AF")
+        add_box_to_faces(all_faces, cx + cw, cx + cw + 0.1 * scale, cy - rh, cy - rh + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.5 * scale, "#9CA3AF")
+        
+        # Coffee table
+        tw, th = 0.5 * scale, 0.3 * scale
+        add_box_to_faces(all_faces, cx - tw, cx + tw, cy - th, cy + th, FLOOR_THICKNESS + 0.25 * scale, FLOOR_THICKNESS + 0.29 * scale, "#D7CCC8")
+        # Legs
+        for lx in [-tw + 0.05*scale, tw - 0.05*scale]:
+            for ly in [-th + 0.05*scale, th - 0.05*scale]:
+                add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, cy + ly - 0.02*scale, cy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.25*scale, "#5D4037")
+                
+    elif "bedroom" in name or "bed" in name:
+        # Bed
+        bw, bh = 0.75 * scale, 0.9 * scale
+        # Mattress
+        add_box_to_faces(all_faces, cx - bw, cx + bw, cy - bh, cy + bh, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#FFFFFF")
+        # Headboard
+        add_box_to_faces(all_faces, cx - bw - 0.02*scale, cx + bw + 0.02*scale, cy - bh - 0.08*scale, cy - bh, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.8 * scale, "#D7CCC8")
+        # Pillows
+        add_box_to_faces(all_faces, cx - 0.55*scale, cx - 0.05*scale, cy - bh + 0.05*scale, cy - bh + 0.25*scale, FLOOR_THICKNESS + 0.45*scale, FLOOR_THICKNESS + 0.52*scale, "#F1F5F9")
+        add_box_to_faces(all_faces, cx + 0.05*scale, cx + 0.55*scale, cy - bh + 0.05*scale, cy - bh + 0.25*scale, FLOOR_THICKNESS + 0.45*scale, FLOOR_THICKNESS + 0.52*scale, "#F1F5F9")
+        
+        # Side tables
+        add_box_to_faces(all_faces, cx - bw - 0.25*scale, cx - bw - 0.05*scale, cy - bh - 0.05*scale, cy - bh + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.35 * scale, "#CBD5E1")
+        add_box_to_faces(all_faces, cx + bw + 0.05*scale, cx + bw + 0.25*scale, cy - bh - 0.05*scale, cy - bh + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.35 * scale, "#CBD5E1")
+        
+    elif "bathroom" in name or "bath" in name or "toilet" in name:
+        # Tub
+        if w > h:
+            add_box_to_faces(all_faces, minx + 0.1, minx + 1.4*scale, cy - 0.4*scale, cy + 0.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
+            add_box_to_faces(all_faces, minx + 0.15, minx + 1.3*scale, cy - 0.3*scale, cy + 0.3*scale, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
+        else:
+            add_box_to_faces(all_faces, cx - 0.4*scale, cx + 0.4*scale, miny + 0.1, miny + 1.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
+            add_box_to_faces(all_faces, cx - 0.3*scale, cx + 0.3*scale, miny + 0.15, miny + 1.3*scale, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
+            
+        # Toilet
+        tx, ty = cx, maxy - 0.4*scale
+        add_box_to_faces(all_faces, tx - 0.15*scale, tx + 0.15*scale, ty - 0.25*scale, ty + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.38*scale, "#FFFFFF")
+        add_box_to_faces(all_faces, tx - 0.18*scale, tx + 0.18*scale, ty + 0.15*scale, ty + 0.25*scale, FLOOR_THICKNESS + 0.38*scale, FLOOR_THICKNESS + 0.7*scale, "#FFFFFF")
+        
+    elif "kitchen" in name:
+        # Counter along one wall
+        add_box_to_faces(all_faces, minx + 0.1, maxx - 0.1, maxy - 0.65*scale, maxy - 0.1, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85*scale, "#E2E8F0")
+        # Sink
+        add_box_to_faces(all_faces, cx - 0.25*scale, cx + 0.25*scale, maxy - 0.55*scale, maxy - 0.2*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.87*scale, "#94A3B8")
+        # Stove
+        add_box_to_faces(all_faces, cx + 0.6*scale, cx + 1.1*scale, maxy - 0.55*scale, maxy - 0.2*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.88*scale, "#1E293B")
+        
+        # Island
+        if h > 3.0:
+            add_box_to_faces(all_faces, cx - 0.6*scale, cx + 0.6*scale, cy - 0.25*scale, cy + 0.25*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85*scale, "#CBD5E1")
+            
+    elif "dining" in name:
+        # Table
+        tw, th = 0.8 * scale, 0.45 * scale
+        add_box_to_faces(all_faces, cx - tw, cx + tw, cy - th, cy + th, FLOOR_THICKNESS + 0.7*scale, FLOOR_THICKNESS + 0.75*scale, "#D7CCC8")
+        # Legs
+        for lx in [-tw + 0.05*scale, tw - 0.05*scale]:
+            for ly in [-th + 0.05*scale, th - 0.05*scale]:
+                add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, cy + ly - 0.02*scale, cy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.7*scale, "#5D4037")
+        
+        # Simple chairs (4)
+        for cx_offset in [-0.4 * scale, 0.4 * scale]:
+            for cy_offset in [-0.75 * scale, 0.75 * scale]:
+                add_box_to_faces(all_faces, cx + cx_offset - 0.15*scale, cx + cx_offset + 0.15*scale, cy + cy_offset - 0.15*scale, cy + cy_offset + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4*scale, "#8D6E63")
+                ry_min = cy + cy_offset - 0.15*scale if cy_offset < 0 else cy + cy_offset + 0.12*scale
+                ry_max = cy + cy_offset - 0.12*scale if cy_offset < 0 else cy + cy_offset + 0.15*scale
+                add_box_to_faces(all_faces, cx + cx_offset - 0.15*scale, cx + cx_offset + 0.15*scale, ry_min, ry_max, FLOOR_THICKNESS + 0.4*scale, FLOOR_THICKNESS + 0.78*scale, "#5D4037")
+
+
 def _compute_wall_graph(rooms):
     """
     Build a topological graph of walls.
@@ -312,6 +436,9 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
         faces = _extrude_polygon_to_3d(poly, 0, FLOOR_THICKNESS)
         for f in faces:
             all_faces.append({"vertices": f, "color": color, "alpha": 0.9})
+            
+        # Add 3D Furniture blocks
+        _place_room_furniture(all_faces, name.lower(), poly)
 
     # 3. Build Wall Topology
     print(" Building wall topology...")
