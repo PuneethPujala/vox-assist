@@ -212,6 +212,96 @@ const Dashboard = () => {
         };
     }, []);
 
+    const renderIsoBox = React.useCallback((x1, x2, y1, y2, z1, z2, topColor, sideColorA, sideColorB, strokeColor) => {
+        const f0 = projectIso(x1, y1, z1);
+        const f1 = projectIso(x2, y1, z1);
+        const f2 = projectIso(x2, y2, z1);
+        const f3 = projectIso(x1, y2, z1);
+
+        const t0 = projectIso(x1, y1, z2);
+        const t1 = projectIso(x2, y1, z2);
+        const t2 = projectIso(x2, y2, z2);
+        const t3 = projectIso(x1, y2, z2);
+
+        return (
+            <g>
+                {/* Top Face */}
+                <polygon points={`${t0.x},${t0.y} ${t1.x},${t1.y} ${t2.x},${t2.y} ${t3.x},${t3.y}`} fill={topColor} stroke={strokeColor} strokeWidth="0.8" />
+                {/* Front-left Face */}
+                <polygon points={`${f3.x},${f3.y} ${f0.x},${f0.y} ${t0.x},${t0.y} ${t3.x},${t3.y}`} fill={sideColorA} stroke={strokeColor} strokeWidth="0.8" />
+                {/* Front-right Face */}
+                <polygon points={`${f2.x},${f2.y} ${f3.x},${f3.y} ${t3.x},${t3.y} ${t2.x},${t2.y}`} fill={sideColorB} stroke={strokeColor} strokeWidth="0.8" />
+            </g>
+        );
+    }, [projectIso]);
+
+    const renderRoomFurniture = React.useCallback((room) => {
+        const cx = room.x + room.width / 2;
+        const r_cy = room.y + room.height / 2;
+        const scale = Math.min(room.width, room.height) / 100;
+        const type = room.type.toLowerCase();
+
+        // Box shades
+        const woodTop = "#d7ccc8", woodSideA = "#c8b7a6", woodSideB = "#bfaea0", woodStroke = "#5c4d3c";
+        const whiteTop = "#ffffff", whiteSideA = "#f1f5f9", whiteSideB = "#cbd5e1", whiteStroke = "#94a3b8";
+        const sofaTop = "#cbd5e1", sofaSideA = "#94a3b8", sofaSideB = "#64748b", sofaStroke = "#475569";
+
+        if (type.includes("living") || type.includes("hall") || type.includes("lounge")) {
+            const rx = 32 * scale, ry = 20 * scale;
+            return (
+                <g key={`furn-living-${room.id}`}>
+                    {/* Rug (very thin box) */}
+                    {renderIsoBox(cx - rx, cx + rx, r_cy - ry, r_cy + ry, 0, 1, "#e5e7eb", "#cbd5e1", "#cbd5e1", "#94a3b8")}
+                    {/* Couch */}
+                    {renderIsoBox(cx - 24 * scale, cx + 24 * scale, r_cy - ry, r_cy - ry + 10 * scale, 1, 12 * scale, sofaTop, sofaSideA, sofaSideB, sofaStroke)}
+                    {/* Coffee Table */}
+                    {renderIsoBox(cx - 12 * scale, cx + 12 * scale, r_cy - 4 * scale, r_cy + 8 * scale, 1, 8 * scale, woodTop, woodSideA, woodSideB, woodStroke)}
+                </g>
+            );
+        } else if (type.includes("bedroom") || type.includes("bed")) {
+            const bx = 20 * scale, by = 24 * scale;
+            return (
+                <g key={`furn-bed-${room.id}`}>
+                    {/* Bed */}
+                    {renderIsoBox(cx - bx, cx + bx, r_cy - by, r_cy + by - 8 * scale, 0, 12 * scale, whiteTop, whiteSideA, whiteSideB, whiteStroke)}
+                    {/* Pillows */}
+                    {renderIsoBox(cx - 15 * scale, cx - 3 * scale, r_cy - by + 2 * scale, r_cy - by + 8 * scale, 12 * scale, 14 * scale, "#f8fafc", "#f1f5f9", "#e2e8f0", "#94a3b8")}
+                    {renderIsoBox(cx + 3 * scale, cx + 15 * scale, r_cy - by + 2 * scale, r_cy - by + 8 * scale, 12 * scale, 14 * scale, "#f8fafc", "#f1f5f9", "#e2e8f0", "#94a3b8")}
+                    {/* Nightstands */}
+                    {renderIsoBox(cx - bx - 8 * scale, cx - bx - 2 * scale, r_cy - by, r_cy - by + 6 * scale, 0, 10 * scale, woodTop, woodSideA, woodSideB, woodStroke)}
+                    {renderIsoBox(cx + bx + 2 * scale, cx + bx + 8 * scale, r_cy - by, r_cy - by + 6 * scale, 0, 10 * scale, woodTop, woodSideA, woodSideB, woodStroke)}
+                </g>
+            );
+        } else if (type.includes("kitchen")) {
+            return (
+                <g key={`furn-kit-${room.id}`}>
+                    {/* Counter along top wall */}
+                    {renderIsoBox(room.x + 2, room.x + room.width - 2, room.y + 2, room.y + 14 * scale, 0, 22 * scale, whiteTop, whiteSideA, whiteSideB, whiteStroke)}
+                    {/* Sink on top counter */}
+                    {renderIsoBox(cx - 10 * scale, cx + 10 * scale, room.y + 4 * scale, room.y + 12 * scale, 22 * scale, 22.5 * scale, "#94a3b8", "#64748b", "#475569", "#334155")}
+                </g>
+            );
+        } else if (type.includes("bathroom") || type.includes("bath") || type.includes("washroom") || type.includes("toilet")) {
+            return (
+                <g key={`furn-bath-${room.id}`}>
+                    {/* Tub */}
+                    {renderIsoBox(cx - 22 * scale, cx + 22 * scale, r_cy - 9 * scale, r_cy + 9 * scale, 0, 12 * scale, whiteTop, whiteSideA, whiteSideB, whiteStroke)}
+                    {/* Inner hollow basin effect */}
+                    {renderIsoBox(cx - 20 * scale, cx + 20 * scale, r_cy - 7 * scale, r_cy + 7 * scale, 4 * scale, 12.2 * scale, "#f8fafc", "#f1f5f9", "#cbd5e1", "#94a3b8")}
+                </g>
+            );
+        } else if (type.includes("dining")) {
+            const tx = 20 * scale, ty = 12 * scale;
+            return (
+                <g key={`furn-dine-${room.id}`}>
+                    {/* Table */}
+                    {renderIsoBox(cx - tx, cx + tx, r_cy - ty, r_cy + ty, 0, 20 * scale, woodTop, woodSideA, woodSideB, woodStroke)}
+                </g>
+            );
+        }
+        return null;
+    }, [projectIso, renderIsoBox]);
+
     // Scroll opacity calculation
     useEffect(() => {
         const handleScroll = () => {
@@ -1112,6 +1202,9 @@ const Dashboard = () => {
                                                                     stroke="#a8a29e"
                                                                     strokeWidth="0.5"
                                                                 />
+
+                                                                {/* Render 3D Furniture blocks */}
+                                                                {renderRoomFurniture(room)}
 
                                                                 {/* Beige Solid Cardboard Wall Faces */}
                                                                 {/* Wall 0: Back-left */}
