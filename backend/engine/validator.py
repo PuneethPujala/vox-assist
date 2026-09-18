@@ -6,12 +6,30 @@ feasibility reports (feasibility_score, checks_passed, violations, details).
 
 from typing import Dict, Any, List, Optional
 from shapely.geometry import Polygon
-from constraints.jurisdiction_profiles import get_profile
-from constraints.envelope import validate_envelope_containment, compute_building_envelope
-from constraints.room_dimensions import validate_all_room_dimensions
-from constraints.egress import validate_bedroom_exterior_access
-from constraints.wet_areas import validate_wet_area_clustering
-from constraints.furniture import validate_furniture_clearance
+try:
+    from constraints.jurisdiction_profiles import get_profile
+    from constraints.envelope import validate_envelope_containment, compute_building_envelope
+    from constraints.room_dimensions import validate_all_room_dimensions
+    from constraints.egress import validate_bedroom_exterior_access
+    from constraints.wet_areas import validate_wet_area_clustering
+    from constraints.furniture import validate_furniture_clearance
+    from constraints.human_usability import (
+        validate_bathroom_single_access,
+        validate_living_focal_orientation,
+        validate_window_daylighting,
+    )
+except ImportError:
+    from engine.constraints.jurisdiction_profiles import get_profile
+    from engine.constraints.envelope import validate_envelope_containment, compute_building_envelope
+    from engine.constraints.room_dimensions import validate_all_room_dimensions
+    from engine.constraints.egress import validate_bedroom_exterior_access
+    from engine.constraints.wet_areas import validate_wet_area_clustering
+    from engine.constraints.furniture import validate_furniture_clearance
+    from engine.constraints.human_usability import (
+        validate_bathroom_single_access,
+        validate_living_focal_orientation,
+        validate_window_daylighting,
+    )
 
 class LayoutValidator:
     @staticmethod
@@ -177,15 +195,22 @@ class LayoutValidator:
         # -------------------------------------------------------------
         entrance = layout.get("entrance")
         doors = layout.get("doors")
+        openings = layout.get("openings", [])
         door_status = "pass"
         door_details = "Code-compliant main entrance and interior door openings placed"
         
-        if ("doors" in layout or "entrance" in layout) and not entrance and len(active_rooms) > 1:
+        # Test bathroom single access constraint
+        bath_access = validate_bathroom_single_access(active_rooms, doors if doors is not None else openings)
+        if not bath_access["valid"]:
+            door_status = "fail"
+            door_details = f"{len(bath_access['violations'])} pass-through bathroom(s) detected: multiple entrances compromise privacy"
+            violations.extend(bath_access["violations"])
+        elif ("doors" in layout or "entrance" in layout) and not entrance and len(active_rooms) > 1:
             door_status = "warn"
             door_details = "Layout lacks a designated exterior entry door"
             warnings.append(door_details)
         elif entrance:
-            door_details = "Main entrance placed on exterior wall with proper clear width"
+            door_details = "Main entrance placed on exterior wall; single private access for all bathrooms"
             
         checks.append({
             "id": "doors",
@@ -207,8 +232,13 @@ class LayoutValidator:
             circulation_pass = False
             circ_details = "Missing central public circulation hub (Living Room)"
             warnings.append(circ_details)
-        elif len(bedrooms) > 1:
-            circ_details = f"{len(bedrooms)} bedrooms properly isolated from service entries"
+        else:
+            focal_res = validate_living_focal_orientation(active_rooms, doors)
+            if not focal_res["valid"]:
+                warnings.append(focal_res["details"])
+                circ_details = focal_res["details"]
+            elif len(bedrooms) > 1:
+                circ_details = f"{len(bedrooms)} bedrooms properly isolated from service entries; living room accommodates focal media wall"
             
         checks.append({
             "id": "circulation",

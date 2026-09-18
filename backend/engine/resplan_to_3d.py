@@ -14,13 +14,20 @@ import os
 WALL_HEIGHT = 2.8        # Standard residential ceiling height (2.8m / ~9.2ft)
 FLOOR_THICKNESS = 0.05   # Thin floor for CAD look
 DOOR_HEIGHT = 2.1        # Standard door height (2.1m / ~7ft)
-WALL_THICKNESS = 0.15    # Standard wall thickness (15cm) - Structural
+WALL_THICKNESS = 0.15    # Standard interior partition wall thickness (15cm)
+EXTERIOR_WALL_THICKNESS = 0.20 # Exterior structural wall thickness (20cm)
 DOOR_THICKNESS = 0.05    # Door panel thickness (5cm) - Thinner than walls
 
-# Wall/door colors - Modern Clean Look
+WINDOW_SILL_HEIGHT = 0.90      # Code-standard window sill height (0.9m)
+WINDOW_HEAD_HEIGHT = 2.10      # Aligned with door header (2.1m)
+BATH_WINDOW_SILL_HEIGHT = 1.50 # High-level privacy ventilator sill
+
+# Wall/door/window colors - Modern Architectural Look
 WALL_COLOR = "#F5F5F5"         # White Smoke walls
 DOOR_FRAME_COLOR = "#5D4037"   # Dark Wood (Walnut)
 DOOR_PANEL_COLOR = "#8D6E63"   # Rich Wood (Walnut)
+WINDOW_FRAME_COLOR = "#334155" # Dark Slate Charcoal
+WINDOW_GLASS_COLOR = "#93C5FD" # Translucent Sky Glass
 GROUND_COLOR = "#E0E0E0"       # Light Grey Ground
 
 # Refined room color palette (Modern Architectural Pastels)
@@ -35,7 +42,7 @@ ROOM_COLORS = [
     "#9D8189",  # Muted Mauve
 ]
 
-def _extrude_linestring_to_thin_wall(line, z_bottom, z_top):
+def _extrude_linestring_to_thin_wall(line, z_bottom, z_top, thickness=None):
     """Extrude a LineString into a thin *thickened* wall strip."""
     if line.is_empty or line.length < 0.01:
         return []
@@ -45,7 +52,8 @@ def _extrude_linestring_to_thin_wall(line, z_bottom, z_top):
         return []
 
     faces = []
-    half_t = WALL_THICKNESS / 2.0
+    actual_t = thickness if thickness is not None else WALL_THICKNESS
+    half_t = actual_t / 2.0
 
     for i in range(len(coords) - 1):
         x1, y1 = coords[i]
@@ -249,7 +257,7 @@ def add_box_to_faces(all_faces, x1, x2, y1, y2, z1, z2, color, alpha=1.0):
     all_faces.append({"vertices": [c100, c110, c111, c101], "color": color, "alpha": alpha})
 
 
-def _place_room_furniture(all_faces, name, poly, door_polys=None):
+def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None):
     if poly.is_empty: return
     
     # Bounding box and dimensions
@@ -258,134 +266,212 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None):
     w = maxx - minx
     h = maxy - miny
     
-    # Enforce safe margin so furniture doesn't clip walls
     if w < 2.0 or h < 2.0:
         return
         
-    # Scale helper for smaller rooms
     scale = min(1.0, min(w / 4.0, h / 4.0))
+    door_polys = door_polys or []
+    all_rooms = all_rooms or {}
     
     if "living" in name or "lounge" in name or "family" in name:
-        # Rug
-        rw, rh = 1.2 * scale, 0.8 * scale
-        add_box_to_faces(all_faces, cx - rw, cx + rw, cy - rh, cy + rh, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E5E7EB")
+        # 1. Determine best solid wall for TV (score North, South, East, West walls)
+        walls = {
+            "south": LineString([(minx, miny), (maxx, miny)]),
+            "north": LineString([(minx, maxy), (maxx, maxy)]),
+            "west":  LineString([(minx, miny), (minx, maxy)]),
+            "east":  LineString([(maxx, miny), (maxx, maxy)]),
+        }
         
-        # Couch (aligned back)
-        cw, ch = 1.0 * scale, 0.2 * scale
-        # Cushion
-        add_box_to_faces(all_faces, cx - cw, cx + cw, cy - rh, cy - rh + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4 * scale, "#D1D5DB")
-        # Backrest
-        add_box_to_faces(all_faces, cx - cw, cx + cw, cy - rh, cy - rh + 0.1 * scale, FLOOR_THICKNESS + 0.4 * scale, FLOOR_THICKNESS + 0.7 * scale, "#9CA3AF")
-        # Armrests
-        add_box_to_faces(all_faces, cx - cw - 0.1 * scale, cx - cw, cy - rh, cy - rh + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.5 * scale, "#9CA3AF")
-        add_box_to_faces(all_faces, cx + cw, cx + cw + 0.1 * scale, cy - rh, cy - rh + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.5 * scale, "#9CA3AF")
+        wall_scores = {}
+        for w_side, w_line in walls.items():
+            doors_on_wall = sum(1 for dp in door_polys if dp.intersects(w_line.buffer(0.25)))
+            length_pref = w_line.length if w_side in ["south", "north"] else w_line.length * 0.95
+            wall_scores[w_side] = -doors_on_wall * 10.0 + length_pref
+
+        best_wall = max(wall_scores.items(), key=lambda x: x[1])[0]
         
-        # Coffee table
-        tw, th = 0.5 * scale, 0.3 * scale
-        add_box_to_faces(all_faces, cx - tw, cx + tw, cy - th, cy + th, FLOOR_THICKNESS + 0.25 * scale, FLOOR_THICKNESS + 0.29 * scale, "#D7CCC8")
-        # Legs
-        for lx in [-tw + 0.05*scale, tw - 0.05*scale]:
-            for ly in [-th + 0.05*scale, th - 0.05*scale]:
-                add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, cy + ly - 0.02*scale, cy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.25*scale, "#5D4037")
+        if best_wall in ["south", "north"]:
+            is_south = (best_wall == "south")
+            tv_y = miny + 0.15 if is_south else maxy - 0.55 * scale
+            tv_center_y = miny + 0.35 if is_south else maxy - 0.35 * scale
+            dist = min(2.4, max(1.8, (h - 0.8) * 0.55))
+            sofa_y = miny + dist if is_south else maxy - dist - 0.7 * scale
+            coffee_y = (tv_center_y + sofa_y) / 2.0
+            
+            # TV Media Unit (width 1.8m, depth 0.4m, height 0.45m)
+            tw = min(0.9 * scale, w * 0.28)
+            add_box_to_faces(all_faces, cx - tw, cx + tw, tv_y, tv_y + 0.4 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#334155")
+            # Wall-mounted TV Screen (width 1.4m, height 0.75m)
+            sw = tw * 0.8
+            screen_y1 = miny + 0.04 if is_south else maxy - 0.08
+            screen_y2 = miny + 0.08 if is_south else maxy - 0.04
+            add_box_to_faces(all_faces, cx - sw, cx + sw, screen_y1, screen_y2, FLOOR_THICKNESS + 0.9 * scale, FLOOR_THICKNESS + 1.65 * scale, "#0F172A")
+            
+            # Area Rug
+            rw, rh = 1.3 * scale, 1.0 * scale
+            add_box_to_faces(all_faces, cx - rw, cx + rw, coffee_y - rh, coffee_y + rh, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
+            
+            # Coffee Table
+            cw_tab, ch_tab = 0.5 * scale, 0.3 * scale
+            add_box_to_faces(all_faces, cx - cw_tab, cx + cw_tab, coffee_y - ch_tab, coffee_y + ch_tab, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
+            for lx in [-cw_tab + 0.05*scale, cw_tab - 0.05*scale]:
+                for ly in [-ch_tab + 0.05*scale, ch_tab - 0.05*scale]:
+                    add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, coffee_y + ly - 0.02*scale, coffee_y + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.32*scale, "#5D4037")
+                    
+            # Sofa Facing TV (opposite the TV wall)
+            cw, cd = 1.1 * scale, 0.4 * scale
+            back_y1 = sofa_y + 0.3 * scale if is_south else sofa_y
+            back_y2 = sofa_y + 0.4 * scale if is_south else sofa_y + 0.1 * scale
+            add_box_to_faces(all_faces, cx - cw, cx + cw, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+            add_box_to_faces(all_faces, cx - cw, cx + cw, back_y1, back_y2, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
+            add_box_to_faces(all_faces, cx - cw - 0.1 * scale, cx - cw, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
+            add_box_to_faces(all_faces, cx + cw, cx + cw + 0.1 * scale, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
+        else:
+            # West or East TV Wall
+            is_west = (best_wall == "west")
+            tv_x = minx + 0.15 if is_west else maxx - 0.55 * scale
+            dist = min(2.4, max(1.8, (w - 0.8) * 0.55))
+            sofa_x = minx + dist if is_west else maxx - dist - 0.7 * scale
+            coffee_x = (cx + sofa_x) / 2.0
+            
+            # TV Media Unit
+            th = min(0.9 * scale, h * 0.28)
+            add_box_to_faces(all_faces, tv_x, tv_x + 0.4 * scale, cy - th, cy + th, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#334155")
+            # Mounted TV Screen
+            sh = th * 0.8
+            screen_x1 = minx + 0.04 if is_west else maxx - 0.08
+            screen_x2 = minx + 0.08 if is_west else maxx - 0.04
+            add_box_to_faces(all_faces, screen_x1, screen_x2, cy - sh, cy + sh, FLOOR_THICKNESS + 0.9 * scale, FLOOR_THICKNESS + 1.65 * scale, "#0F172A")
+            
+            # Area Rug & Coffee Table
+            add_box_to_faces(all_faces, coffee_x - 0.8 * scale, coffee_x + 0.8 * scale, cy - 1.2 * scale, cy + 1.2 * scale, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
+            add_box_to_faces(all_faces, coffee_x - 0.3 * scale, coffee_x + 0.3 * scale, cy - 0.5 * scale, cy + 0.5 * scale, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
+            
+            # Sofa Facing West/East
+            cd = 0.4 * scale
+            back_x1 = sofa_x + 0.3 * scale if is_west else sofa_x
+            back_x2 = sofa_x + 0.4 * scale if is_west else sofa_x + 0.1 * scale
+            add_box_to_faces(all_faces, sofa_x, sofa_x + cd, cy - 1.0 * scale, cy + 1.0 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+            add_box_to_faces(all_faces, back_x1, back_x2, cy - 1.0 * scale, cy + 1.0 * scale, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
+
+        # Integrated Dining Zone if spacious and no separate dining room
+        has_dining_room = any("dining" in r.lower() for r in all_rooms.keys())
+        if not has_dining_room and (w * h >= 16.0 or max(w, h) >= 4.8):
+            dx = minx + 1.2 * scale if best_wall == "east" else maxx - 1.2 * scale
+            dy = miny + 1.2 * scale if best_wall == "north" else maxy - 1.2 * scale
+            dtw, dth = 0.6 * scale, 0.4 * scale
+            add_box_to_faces(all_faces, dx - dtw, dx + dtw, dy - dth, dy + dth, FLOOR_THICKNESS + 0.72 * scale, FLOOR_THICKNESS + 0.76 * scale, "#8D6E63")
+            for lx in [-dtw + 0.05*scale, dtw - 0.05*scale]:
+                for ly in [-dth + 0.05*scale, dth - 0.05*scale]:
+                    add_box_to_faces(all_faces, dx + lx - 0.02*scale, dx + lx + 0.02*scale, dy + ly - 0.02*scale, dy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.72*scale, "#5D4037")
+            for ox in [-dtw * 0.6, dtw * 0.6]:
+                for oy in [-dth - 0.25 * scale, dth + 0.25 * scale]:
+                    add_box_to_faces(all_faces, dx + ox - 0.12*scale, dx + ox + 0.12*scale, dy + oy - 0.12*scale, dy + oy + 0.12*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42*scale, "#475569")
                 
     elif "bedroom" in name or "bed" in name:
-        # Bed
-        bw, bh = 0.75 * scale, 0.9 * scale
-        # Mattress
-        add_box_to_faces(all_faces, cx - bw, cx + bw, cy - bh, cy + bh, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#FFFFFF")
-        # Headboard
-        add_box_to_faces(all_faces, cx - bw - 0.02*scale, cx + bw + 0.02*scale, cy - bh - 0.08*scale, cy - bh, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.8 * scale, "#D7CCC8")
-        # Pillows
-        add_box_to_faces(all_faces, cx - 0.55*scale, cx - 0.05*scale, cy - bh + 0.05*scale, cy - bh + 0.25*scale, FLOOR_THICKNESS + 0.45*scale, FLOOR_THICKNESS + 0.52*scale, "#F1F5F9")
-        add_box_to_faces(all_faces, cx + 0.05*scale, cx + 0.55*scale, cy - bh + 0.05*scale, cy - bh + 0.25*scale, FLOOR_THICKNESS + 0.45*scale, FLOOR_THICKNESS + 0.52*scale, "#F1F5F9")
+        # Double Bed with Padded Headboard against solid wall
+        bw, bh = 0.8 * scale, 0.95 * scale
+        bed_cx = cx
+        bed_cy = miny + bh + 0.25 * scale
         
-        # Side tables
-        add_box_to_faces(all_faces, cx - bw - 0.25*scale, cx - bw - 0.05*scale, cy - bh - 0.05*scale, cy - bh + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.35 * scale, "#CBD5E1")
-        add_box_to_faces(all_faces, cx + bw + 0.05*scale, cx + bw + 0.25*scale, cy - bh - 0.05*scale, cy - bh + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.35 * scale, "#CBD5E1")
+        # Padded Headboard against wall
+        add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, miny + 0.08, miny + 0.18*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
+        # Mattress
+        add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, miny + 0.18*scale, miny + 0.18*scale + 1.7*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
+        # Pillows
+        add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, miny + 0.22*scale, miny + 0.52*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+        add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, miny + 0.22*scale, miny + 0.52*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+        
+        # Bedside Nightstands flanking bed with lamps
+        for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
+            add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, miny + 0.12, miny + 0.48*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
+            add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, miny + 0.22*scale, miny + 0.32*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
+            
+        # Wardrobe Closet along side wall (depth 0.6m, height 2.2m)
+        if w >= 2.8:
+            add_box_to_faces(all_faces, maxx - 0.62, maxx - 0.05, cy - 0.7*scale, cy + 0.7*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 2.2 * scale, "#5D4037")
         
     elif "bathroom" in name or "bath" in name or "toilet" in name:
-        # Check where the door is
+        # Modern Bathroom Suite: Vanity, Toilet, and Shower/Tub
         door_near_top = False
         if door_polys:
             for door in door_polys:
-                if door.intersects(poly.buffer(0.1)):
+                if door.intersects(poly.buffer(0.15)):
                     dy = door.centroid.y
                     if abs(dy - maxy) < abs(dy - miny):
                         door_near_top = True
 
-        # Tub
-        if w > h:
-            add_box_to_faces(all_faces, minx + 0.1, minx + 1.4*scale, cy - 0.4*scale, cy + 0.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
-            add_box_to_faces(all_faces, minx + 0.15, minx + 1.3*scale, cy - 0.3*scale, cy + 0.3*scale, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
-        else:
-            tub_y_min = miny + 0.1 if door_near_top else maxy - 1.4*scale
-            tub_y_max = miny + 1.4*scale if door_near_top else maxy - 0.1
-            add_box_to_faces(all_faces, cx - 0.4*scale, cx + 0.4*scale, tub_y_min, tub_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45*scale, "#F8FAFC")
-            add_box_to_faces(all_faces, cx - 0.3*scale, cx + 0.3*scale, tub_y_min + 0.05, tub_y_max - 0.05, FLOOR_THICKNESS + 0.15, FLOOR_THICKNESS + 0.46*scale, "#E2E8F0")
-            
-        # Place toilet and vanity opposite to the door (if door near top, place at bottom)
-        if door_near_top:
-            tx, ty = cx + 0.5*scale, miny + 0.4*scale
-            bx, by = cx - 0.5*scale, miny + 0.4*scale
-        else:
-            tx, ty = cx + 0.5*scale, maxy - 0.4*scale
-            bx, by = cx - 0.5*scale, maxy - 0.4*scale
-
-        # Toilet
-        add_box_to_faces(all_faces, tx - 0.15*scale, tx + 0.15*scale, ty - 0.25*scale, ty + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.38*scale, "#FFFFFF")
-        add_box_to_faces(all_faces, tx - 0.18*scale, tx + 0.18*scale, ty + 0.15*scale, ty + 0.25*scale, FLOOR_THICKNESS + 0.38*scale, FLOOR_THICKNESS + 0.7*scale, "#FFFFFF")
-
-        # Wash Basin / Vanity Cabinet
-        add_box_to_faces(all_faces, bx - 0.35*scale, bx + 0.35*scale, by - 0.25*scale, by + 0.25*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.8*scale, "#8D6E63")
-        add_box_to_faces(all_faces, bx - 0.25*scale, bx + 0.25*scale, by - 0.18*scale, by + 0.18*scale, FLOOR_THICKNESS + 0.8*scale, FLOOR_THICKNESS + 0.85*scale, "#FFFFFF")
-        add_box_to_faces(all_faces, bx - 0.03*scale, bx + 0.03*scale, by + 0.12*scale, by + 0.18*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.95*scale, "#94A3B8")
+        fix_y = miny + 0.15 if door_near_top else maxy - 0.55
+        
+        # 1. Floating Vanity Unit with Basin & Mirror
+        vx = minx + 0.15
+        add_box_to_faces(all_faces, vx, vx + 0.7 * scale, fix_y, fix_y + 0.45 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.82 * scale, "#8D6E63")
+        add_box_to_faces(all_faces, vx + 0.1*scale, vx + 0.6*scale, fix_y + 0.05*scale, fix_y + 0.4*scale, FLOOR_THICKNESS + 0.82*scale, FLOOR_THICKNESS + 0.87*scale, "#FFFFFF")
+        mirror_y1 = miny + 0.04 if door_near_top else maxy - 0.08
+        mirror_y2 = miny + 0.08 if door_near_top else maxy - 0.04
+        add_box_to_faces(all_faces, vx + 0.1*scale, vx + 0.6*scale, mirror_y1, mirror_y2, FLOOR_THICKNESS + 1.1*scale, FLOOR_THICKNESS + 1.7*scale, "#CBD5E1")
+        
+        # 2. Porcelain Toilet Bowl & Cistern
+        tx = cx
+        add_box_to_faces(all_faces, tx - 0.18*scale, tx + 0.18*scale, fix_y, fix_y + 0.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4*scale, "#FFFFFF")
+        cistern_y1 = miny + 0.04 if door_near_top else maxy - 0.2*scale
+        cistern_y2 = miny + 0.2*scale if door_near_top else maxy - 0.04
+        add_box_to_faces(all_faces, tx - 0.2*scale, tx + 0.2*scale, cistern_y1, cistern_y2, FLOOR_THICKNESS + 0.4*scale, FLOOR_THICKNESS + 0.75*scale, "#FFFFFF")
+        
+        # 3. Walk-in Shower with Tempered Glass Screen
+        sx1, sx2 = maxx - 1.0 * scale, maxx - 0.1
+        add_box_to_faces(all_faces, sx1, sx2, miny + 0.1, maxy - 0.1, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.04*scale, "#E2E8F0")
+        add_box_to_faces(all_faces, sx1 - 0.02, sx1 + 0.02, miny + 0.1, maxy - 0.4, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.95*scale, "#93C5FD", alpha=0.4)
         
     elif "kitchen" in name:
-        # Check if there is a door near the top wall (maxy) or bottom wall (miny)
+        # Kitchen Work Triangle: Refrigerator -> Countertop -> Sink -> Cooktop
         door_near_bottom = False
         if door_polys:
             for door in door_polys:
-                if door.intersects(poly.buffer(0.1)):
+                if door.intersects(poly.buffer(0.15)):
                     dy = door.centroid.y
                     if abs(dy - miny) < abs(dy - maxy):
                         door_near_bottom = True
 
-        if door_near_bottom:
-            counter_y_min, counter_y_max = maxy - 0.65*scale, maxy - 0.1
-            sink_y_min, sink_y_max = maxy - 0.55*scale, maxy - 0.2*scale
-            stove_y_min, stove_y_max = maxy - 0.55*scale, maxy - 0.2*scale
-        else:
-            counter_y_min, counter_y_max = miny + 0.1, miny + 0.65*scale
-            sink_y_min, sink_y_max = miny + 0.2*scale, miny + 0.55*scale
-            stove_y_min, stove_y_max = miny + 0.2*scale, miny + 0.55*scale
-
-        # Counter along selected wall
-        add_box_to_faces(all_faces, minx + 0.1, maxx - 0.1, counter_y_min, counter_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85*scale, "#E2E8F0")
-        # Sink
-        add_box_to_faces(all_faces, cx - 0.25*scale, cx + 0.25*scale, sink_y_min, sink_y_max, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.87*scale, "#94A3B8")
-        # Stove
-        add_box_to_faces(all_faces, cx + 0.6*scale, cx + 1.1*scale, stove_y_min, stove_y_max, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.88*scale, "#1E293B")
+        counter_y_min, counter_y_max = (maxy - 0.65, maxy - 0.05) if door_near_bottom else (miny + 0.05, miny + 0.65)
         
-        # Island
-        if h > 3.0:
-            add_box_to_faces(all_faces, cx - 0.6*scale, cx + 0.6*scale, cy - 0.25*scale, cy + 0.25*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85*scale, "#CBD5E1")
+        # Counter cabinetry and quartz countertop
+        add_box_to_faces(all_faces, minx + 0.8, maxx - 0.1, counter_y_min, counter_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85 * scale, "#334155")
+        add_box_to_faces(all_faces, minx + 0.8, maxx - 0.1, counter_y_min - 0.02, counter_y_max + 0.02, FLOOR_THICKNESS + 0.83 * scale, FLOOR_THICKNESS + 0.87 * scale, "#F8FAFC")
+        
+        # Refrigerator Tower (width 0.75m, height 1.85m)
+        add_box_to_faces(all_faces, minx + 0.05, minx + 0.75, counter_y_min, counter_y_max + 0.05, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.85 * scale, "#94A3B8")
+        
+        # Inset Sink
+        sink_cx = minx + 1.5 * scale
+        add_box_to_faces(all_faces, sink_cx - 0.3*scale, sink_cx + 0.3*scale, (counter_y_min + counter_y_max)/2 - 0.2*scale, (counter_y_min + counter_y_max)/2 + 0.2*scale, FLOOR_THICKNESS + 0.84*scale, FLOOR_THICKNESS + 0.88*scale, "#CBD5E1")
+        
+        # Inset 4-Burner Cooktop
+        stove_cx = maxx - 0.8 * scale
+        add_box_to_faces(all_faces, stove_cx - 0.35*scale, stove_cx + 0.35*scale, (counter_y_min + counter_y_max)/2 - 0.25*scale, (counter_y_min + counter_y_max)/2 + 0.25*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.89*scale, "#0F172A")
+        # Overhead Range Hood
+        add_box_to_faces(all_faces, stove_cx - 0.35*scale, stove_cx + 0.35*scale, counter_y_min, counter_y_max, FLOOR_THICKNESS + 1.65*scale, FLOOR_THICKNESS + 1.95*scale, "#64748B")
+        
+        # Island / Breakfast Bar if spacious
+        if h >= 3.2:
+            island_y = cy
+            add_box_to_faces(all_faces, cx - 0.8*scale, cx + 0.8*scale, island_y - 0.35*scale, island_y + 0.35*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.88*scale, "#CBD5E1")
             
     elif "dining" in name:
-        # Table
-        tw, th = 0.8 * scale, 0.45 * scale
-        add_box_to_faces(all_faces, cx - tw, cx + tw, cy - th, cy + th, FLOOR_THICKNESS + 0.7*scale, FLOOR_THICKNESS + 0.75*scale, "#D7CCC8")
-        # Legs
+        # 6-Seater Dining Table and Chairs
+        tw, th = 0.85 * scale, 0.5 * scale
+        add_box_to_faces(all_faces, cx - tw, cx + tw, cy - th, cy + th, FLOOR_THICKNESS + 0.72*scale, FLOOR_THICKNESS + 0.76*scale, "#8D6E63")
         for lx in [-tw + 0.05*scale, tw - 0.05*scale]:
             for ly in [-th + 0.05*scale, th - 0.05*scale]:
-                add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, cy + ly - 0.02*scale, cy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.7*scale, "#5D4037")
+                add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, cy + ly - 0.02*scale, cy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.72*scale, "#5D4037")
         
-        # Simple chairs (4)
-        for cx_offset in [-0.4 * scale, 0.4 * scale]:
+        # Chairs (6)
+        for cx_offset in [-0.5 * scale, 0.0, 0.5 * scale]:
             for cy_offset in [-0.75 * scale, 0.75 * scale]:
-                add_box_to_faces(all_faces, cx + cx_offset - 0.15*scale, cx + cx_offset + 0.15*scale, cy + cy_offset - 0.15*scale, cy + cy_offset + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4*scale, "#8D6E63")
+                add_box_to_faces(all_faces, cx + cx_offset - 0.15*scale, cx + cx_offset + 0.15*scale, cy + cy_offset - 0.15*scale, cy + cy_offset + 0.15*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42*scale, "#475569")
                 ry_min = cy + cy_offset - 0.15*scale if cy_offset < 0 else cy + cy_offset + 0.12*scale
                 ry_max = cy + cy_offset - 0.12*scale if cy_offset < 0 else cy + cy_offset + 0.15*scale
-                add_box_to_faces(all_faces, cx + cx_offset - 0.15*scale, cx + cx_offset + 0.15*scale, ry_min, ry_max, FLOOR_THICKNESS + 0.4*scale, FLOOR_THICKNESS + 0.78*scale, "#5D4037")
+                add_box_to_faces(all_faces, cx + cx_offset - 0.15*scale, cx + cx_offset + 0.15*scale, ry_min, ry_max, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.78*scale, "#5D4037")
 
 
 def _compute_wall_graph(rooms):
@@ -479,7 +565,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
             all_faces.append({"vertices": f, "color": color, "alpha": 0.9})
             
         # Add 3D Furniture blocks
-        _place_room_furniture(all_faces, name.lower(), poly, door_polygons)
+        _place_room_furniture(all_faces, name.lower(), poly, door_polygons, all_rooms=rooms)
 
     # 3. Build Wall Topology
     print(" Building wall topology...")
@@ -502,8 +588,8 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                     b_type = 'open'
             balcony_types[r_name] = b_type
 
-    # 4. Generate Wall Geometry (Cutting for Doors)
-    print(" Generating walls...")
+    # 4. Generate Wall Geometry (Cutting for Doors & Windows)
+    print(" Generating walls and windows...")
     
     generated_door_panels = [] # New list for wall-aligned doors
     
@@ -511,26 +597,105 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
         base_line = LineString([p1, p2])
         if base_line.length < 0.1: continue
         
-        # Determine Wall Type
+        # Determine Wall Type & Thickness
         is_exterior = (len(sharing_rooms) == 1)
+        wall_thick = EXTERIOR_WALL_THICKNESS if is_exterior else WALL_THICKNESS
         
         # Determine Height
         z_bottom = FLOOR_THICKNESS
         z_top = FLOOR_THICKNESS + WALL_HEIGHT
         
         if is_exterior:
-            room_name = sharing_rooms[0]
+            room_name = sharing_rooms[0].lower()
             if room_name in balcony_types:
                 if balcony_types[room_name] == 'open':
                     z_top = FLOOR_THICKNESS + 0.1 # Curb
                 elif balcony_types[room_name] == 'half':
                     z_top = FLOOR_THICKNESS + (WALL_HEIGHT * 0.4) # Parapet
-        else:
-            # Interior Wall
-            pass 
+                for f in _extrude_linestring_to_thin_wall(base_line, z_bottom, z_top, thickness=wall_thick):
+                    all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                continue
 
-        # Cut Doors physically from this segment
-        # We subtract all door polygons from this line
+            # Check if this exterior segment has an entrance door
+            has_door = False
+            if door_polygons:
+                has_door = any(base_line.intersects(d.buffer(0.02)) for d in door_polygons)
+
+            # If no door on this exterior wall, insert architectural window!
+            if not has_door:
+                is_habitable = any(t in room_name for t in ["living", "bedroom", "dining", "kitchen", "study", "family"])
+                is_bathroom = any(t in room_name for t in ["bath", "toilet", "powder"])
+
+                if is_habitable and base_line.length >= 1.6:
+                    win_width = min(1.8, max(1.0, base_line.length * 0.55))
+                    L = base_line.length
+                    start_dist = (L - win_width) / 2.0
+                    end_dist = start_dist + win_width
+
+                    p_start = base_line.interpolate(start_dist / L, normalized=True)
+                    p_end = base_line.interpolate(end_dist / L, normalized=True)
+
+                    seg_before = LineString([p1, (p_start.x, p_start.y)])
+                    seg_window = LineString([(p_start.x, p_start.y), (p_end.x, p_end.y)])
+                    seg_after = LineString([(p_end.x, p_end.y), p2])
+
+                    if seg_before.length > 0.05:
+                        for f in _extrude_linestring_to_thin_wall(seg_before, z_bottom, z_top, thickness=wall_thick):
+                            all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                    if seg_after.length > 0.05:
+                        for f in _extrude_linestring_to_thin_wall(seg_after, z_bottom, z_top, thickness=wall_thick):
+                            all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+
+                    z_sill = FLOOR_THICKNESS + WINDOW_SILL_HEIGHT
+                    z_head = FLOOR_THICKNESS + WINDOW_HEAD_HEIGHT
+
+                    # Wall below sill & header above window
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_bottom, z_sill, thickness=wall_thick):
+                        all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_head, z_top, thickness=wall_thick):
+                        all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                    # Glass pane (translucent sky blue)
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_sill + 0.02, z_head - 0.02, thickness=0.03):
+                        all_faces.append({"vertices": f, "color": WINDOW_GLASS_COLOR, "alpha": 0.55})
+                    # Window frame trim
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_sill, z_sill + 0.03, thickness=wall_thick * 1.05):
+                        all_faces.append({"vertices": f, "color": WINDOW_FRAME_COLOR, "alpha": 1.0})
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_head - 0.03, z_head, thickness=wall_thick * 1.05):
+                        all_faces.append({"vertices": f, "color": WINDOW_FRAME_COLOR, "alpha": 1.0})
+                    continue
+
+                elif is_bathroom and base_line.length >= 1.0:
+                    win_width = min(0.8, base_line.length * 0.45)
+                    L = base_line.length
+                    start_dist = (L - win_width) / 2.0
+                    end_dist = start_dist + win_width
+
+                    p_start = base_line.interpolate(start_dist / L, normalized=True)
+                    p_end = base_line.interpolate(end_dist / L, normalized=True)
+
+                    seg_before = LineString([p1, (p_start.x, p_start.y)])
+                    seg_window = LineString([(p_start.x, p_start.y), (p_end.x, p_end.y)])
+                    seg_after = LineString([(p_end.x, p_end.y), p2])
+
+                    if seg_before.length > 0.05:
+                        for f in _extrude_linestring_to_thin_wall(seg_before, z_bottom, z_top, thickness=wall_thick):
+                            all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                    if seg_after.length > 0.05:
+                        for f in _extrude_linestring_to_thin_wall(seg_after, z_bottom, z_top, thickness=wall_thick):
+                            all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+
+                    z_sill = FLOOR_THICKNESS + BATH_WINDOW_SILL_HEIGHT
+                    z_head = FLOOR_THICKNESS + WINDOW_HEAD_HEIGHT
+
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_bottom, z_sill, thickness=wall_thick):
+                        all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_head, z_top, thickness=wall_thick):
+                        all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+                    for f in _extrude_linestring_to_thin_wall(seg_window, z_sill + 0.02, z_head - 0.02, thickness=0.03):
+                        all_faces.append({"vertices": f, "color": "#E2E8F0", "alpha": 0.70})
+                    continue
+
+        # Interior Wall (or exterior wall with entrance door)
         final_segments = [base_line]
         
         if door_polygons:
@@ -540,40 +705,43 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                 
                 for seg in final_segments:
                     if seg.intersects(door_shape):
-                        # 1. Capture the Hole (Intersection)
                         intersection = seg.intersection(door_shape)
                         
-                        # Generate Wall-Aligned Door Panel if valid intersection
                         if not intersection.is_empty and isinstance(intersection, LineString):
-                             # Calculate Door Geometry aligned to Wall
-                             i_coords = list(intersection.coords)
-                             if len(i_coords) >= 2:
-                                 ix1, iy1 = i_coords[0]
-                                 ix2, iy2 = i_coords[-1]
-                                 idx, idy = ix2 - ix1, iy2 - iy1
-                                 ilen = (idx**2 + idy**2)**0.5
-                                 
-                                 if ilen > 0.5: # Min door width
-                                     # Vector logic
-                                     wall_dir = np.array([idx, idy]) / ilen
-                                     perp_dir = np.array([-wall_dir[1], wall_dir[0]])
-                                     
-                                     center = np.array([(ix1+ix2)/2, (iy1+iy2)/2])
-                                     
-                                     # Dimensions
-                                     d_thick = WALL_THICKNESS * 0.8 # Slightly thinner than wall
-                                     d_half_width = ilen / 2
-                                     d_half_thick = d_thick / 2
-                                     
-                                     # Construct corners (flush with wall center)
-                                     c1 = center + wall_dir * d_half_width + perp_dir * d_half_thick
-                                     c2 = center - wall_dir * d_half_width + perp_dir * d_half_thick
-                                     c3 = center - wall_dir * d_half_width - perp_dir * d_half_thick
-                                     c4 = center + wall_dir * d_half_width - perp_dir * d_half_thick
-                                     
-                                     door_poly = Polygon([tuple(c1), tuple(c2), tuple(c3), tuple(c4)])
-                                     generated_door_panels.append(door_poly)
-                        # 2. Subtract the Hole from Wall
+                            # Extrude WALL LINTEL/HEADER above door or cased opening!
+                            z_header_bottom = FLOOR_THICKNESS + DOOR_HEIGHT
+                            header_faces = _extrude_linestring_to_thin_wall(
+                                intersection, z_header_bottom, z_top, thickness=wall_thick
+                            )
+                            for f in header_faces:
+                                all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
+
+                            # Only extrude wooden door panel for actual hinged doors (width <= 1.10m)!
+                            # Cased openings (> 1.10m, such as open kitchen portal) do NOT get a door panel.
+                            i_coords = list(intersection.coords)
+                            if len(i_coords) >= 2:
+                                ix1, iy1 = i_coords[0]
+                                ix2, iy2 = i_coords[-1]
+                                idx, idy = ix2 - ix1, iy2 - iy1
+                                ilen = (idx**2 + idy**2)**0.5
+                                
+                                if 0.55 <= ilen <= 1.10: # Min/max hinged door width
+                                    wall_dir = np.array([idx, idy]) / ilen
+                                    perp_dir = np.array([-wall_dir[1], wall_dir[0]])
+                                    center = np.array([(ix1+ix2)/2, (iy1+iy2)/2])
+                                    
+                                    d_thick = wall_thick * 0.8 # Slightly thinner than wall
+                                    d_half_width = ilen / 2
+                                    d_half_thick = d_thick / 2
+                                    
+                                    c1 = center + wall_dir * d_half_width + perp_dir * d_half_thick
+                                    c2 = center - wall_dir * d_half_width + perp_dir * d_half_thick
+                                    c3 = center - wall_dir * d_half_width - perp_dir * d_half_thick
+                                    c4 = center + wall_dir * d_half_width - perp_dir * d_half_thick
+                                    
+                                    door_poly = Polygon([tuple(c1), tuple(c2), tuple(c3), tuple(c4)])
+                                    generated_door_panels.append(door_poly)
+
                         diff = seg.difference(door_shape)
                         if not diff.is_empty:
                             if isinstance(diff, LineString):
@@ -584,10 +752,10 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                         new_segments.append(seg)
                 final_segments = new_segments
         
-        # Extrude resulting segments
+        # Extrude solid remaining segments
         for seg in final_segments:
             if seg.length < 0.05: continue
-            w_faces = _extrude_linestring_to_thin_wall(seg, z_bottom, z_top)
+            w_faces = _extrude_linestring_to_thin_wall(seg, z_bottom, z_top, thickness=wall_thick)
             for f in w_faces:
                 all_faces.append({"vertices": f, "color": WALL_COLOR, "alpha": 1.0})
 

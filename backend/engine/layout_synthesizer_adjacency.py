@@ -8,7 +8,14 @@ logger = logging.getLogger(__name__)
 
 from adjacency_rules import ADJACENCY_RULES, validate_adjacency
 from corridor_generator import generate_corridors
-from door_generator import generate_doors
+from door_generator import (
+    generate_doors,
+    generate_doors_with_metadata,
+    INTERIOR_DOOR_WIDTH,
+    BATH_DOOR_WIDTH,
+    ENTRY_DOOR_WIDTH,
+    CASED_OPENING_WIDTH,
+)
 
 try:
     from constraints.envelope import compute_building_envelope, is_within_envelope
@@ -20,9 +27,9 @@ except ImportError:
 # =========================
 # CONSTANTS
 # =========================
-# Opening widths in meters (wider so gaps read clearly in 2D/3D)
-DOOR_WIDTH = 1.4
-OPEN_SPACE_WIDTH = 3.2
+# Architectural opening widths in meters
+DOOR_WIDTH = INTERIOR_DOOR_WIDTH
+OPEN_SPACE_WIDTH = CASED_OPENING_WIDTH
 WALL_TOLERANCE = 0.5
 JITTER = 0.15  # Small positional noise
 
@@ -228,7 +235,7 @@ def _generate_entrance_door(living_room_poly, all_rooms):
     if not external_walls:
         return None
     
-    valid_walls = [w for w in external_walls if w.length >= DOOR_WIDTH]
+    valid_walls = [w for w in external_walls if w.length >= ENTRY_DOOR_WIDTH]
     if not valid_walls:
         return None
     
@@ -251,7 +258,7 @@ def _generate_entrance_door(living_room_poly, all_rooms):
     px, py = -ny, nx
     
     door_depth = 0.3
-    w = DOOR_WIDTH / 2
+    w = ENTRY_DOOR_WIDTH / 2
     d = door_depth / 2
     
     return Polygon([
@@ -261,12 +268,79 @@ def _generate_entrance_door(living_room_poly, all_rooms):
         (mid_point.x - nx*w + px*d, mid_point.y - ny*w + py*d),
     ])
 
+def _determine_opening_spec(r1, r2):
+    """
+    Returns (width, opening_type) where opening_type is 'cased_opening' or 'door'.
+    """
+    t1 = r1.split("_")[0].lower()
+    t2 = r2.split("_")[0].lower()
+    pair = {t1, t2}
+    if pair == {"living", "kitchen"} or pair == {"living", "dining"} or pair == {"dining", "kitchen"}:
+        return CASED_OPENING_WIDTH, "cased_opening"
+    if any(k in t1 or k in t2 for k in ["bath", "toilet", "wash", "powder"]):
+        return BATH_DOOR_WIDTH, "door"
+    return INTERIOR_DOOR_WIDTH, "door"
+
 def _determine_opening_width(r1, r2):
-    t1 = r1.split("_")[0]
-    t2 = r2.split("_")[0]
-    if {t1, t2} == {"living", "kitchen"}:
-        return OPEN_SPACE_WIDTH
-    return DOOR_WIDTH
+    width, _ = _determine_opening_spec(r1, r2)
+    return width
+
+def _filter_topological_doors(valid_adjacency, rooms):
+    """
+    Enforces architectural privacy and connectivity:
+    1. Every bathroom has AT MOST ONE entrance (eliminating pass-through bathrooms).
+       - If adjacent to an ensuite bedroom, prioritize connecting to that bedroom.
+       - Otherwise, connect to hallway or living room.
+    2. Prune duplicate/unnecessary cross-room openings.
+    """
+    bathroom_rooms = [r for r in rooms.keys() if any(k in r.lower() for k in ["bath", "toilet", "wash", "powder"])]
+    assigned_ensuites = set()
+
+    baths_to_pairs = {b: [] for b in bathroom_rooms}
+    non_bathroom_pairs = []
+
+    for r1, r2 in valid_adjacency:
+        b_in_pair = [b for b in bathroom_rooms if b in (r1, r2)]
+        if b_in_pair:
+            for b in b_in_pair:
+                other = r2 if b == r1 else r1
+                baths_to_pairs[b].append((b, other, (r1, r2)))
+        else:
+            non_bathroom_pairs.append((r1, r2))
+
+    filtered_bathroom_pairs = []
+    for b, candidates in baths_to_pairs.items():
+        if not candidates:
+            continue
+        if len(candidates) == 1:
+            filtered_bathroom_pairs.append(candidates[0][2])
+            continue
+
+        bedroom_cands = [c for c in candidates if "bedroom" in c[1].lower()]
+        hall_cands = [c for c in candidates if "hall" in c[1].lower() or "corridor" in c[1].lower()]
+        living_cands = [c for c in candidates if "living" in c[1].lower()]
+
+        chosen_cand = None
+        for bc in bedroom_cands:
+            if bc[1] not in assigned_ensuites:
+                chosen_cand = bc
+                assigned_ensuites.add(bc[1])
+                break
+
+        if not chosen_cand:
+            if hall_cands:
+                chosen_cand = hall_cands[0]
+            elif bedroom_cands:
+                chosen_cand = bedroom_cands[0]
+            elif living_cands:
+                chosen_cand = living_cands[0]
+            else:
+                chosen_cand = candidates[0]
+
+        filtered_bathroom_pairs.append(chosen_cand[2])
+        logger.info(f"Bathroom Privacy: {b} restricted to single entrance via {chosen_cand[1]} (pruned {len(candidates)-1} pass-through candidate(s))")
+
+    return non_bathroom_pairs + filtered_bathroom_pairs
 
 def _get_compact_sides(existing_layouts):
     """
@@ -865,18 +939,25 @@ def synthesize_layout_from_spec(spec, config=None):
             print(f"⚠️  Corridor: {e}")
     
     doors = None
+    openings_metadata = []
+    opening_specs = []
+    filtered_adjacency = valid_adjacency
+
     if valid_adjacency:
         try:
-            opening_specs = []
-            for r1, r2 in valid_adjacency:
-                width = _determine_opening_width(r1, r2)
-                opening_specs.append((r1, r2, width))
-            doors = generate_doors(rooms, opening_specs)
+            # 1. Topological filtering: strictly max 1 door per bathroom to prevent pass-through bathrooms
+            filtered_adjacency = _filter_topological_doors(valid_adjacency, rooms)
+            
+            # 2. Assign architectural dimensions and types (cased opening vs door)
+            for r1, r2 in filtered_adjacency:
+                width, op_type = _determine_opening_spec(r1, r2)
+                opening_specs.append((r1, r2, width, op_type))
+                
+            doors, openings_metadata = generate_doors_with_metadata(rooms, opening_specs)
             if doors:
                 print(f"\n🚪 Generated {len(opening_specs)} openings")
-                for (a, b, w) in opening_specs:
-                    style = "open space" if w == OPEN_SPACE_WIDTH else "door"
-                    print(f"   • {a} ↔ {b} ({style}, {w}m)")
+                for (a, b, w, o_type) in opening_specs:
+                    print(f"   • {a} ↔ {b} ({o_type}, {w}m)")
         except Exception as e:
             print(f"⚠️  Doors: {e}")
             import traceback
@@ -889,6 +970,13 @@ def synthesize_layout_from_spec(spec, config=None):
         entrance = _generate_entrance_door(rooms[living_rooms[0]], rooms)
         if entrance:
             doors = unary_union([doors, entrance]) if doors else entrance
+            openings_metadata.append({
+                "rooms": (living_rooms[0], "exterior"),
+                "width": ENTRY_DOOR_WIDTH,
+                "type": "entrance",
+                "polygon": entrance,
+                "wall_length": 0.0,
+            })
             print("  ✅ Entrance door placed")
         else:
             print("  ⚠️  Failed to place entrance door")
@@ -930,7 +1018,9 @@ def synthesize_layout_from_spec(spec, config=None):
         "rooms": rooms,
         "corridors": corridors,
         "doors": doors,
-        "adjacency": valid_adjacency,
+        "openings": openings_metadata,
+        "opening_specs": opening_specs,
+        "adjacency": filtered_adjacency,
         "entrance": entrance,
         "score": score,
         "adjacency_satisfaction": adjacency_satisfaction,

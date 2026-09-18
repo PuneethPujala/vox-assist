@@ -1,8 +1,15 @@
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
+# =========================
+# ARCHITECTURAL OPENING CONSTANTS
+# =========================
 DOOR_DEPTH = 0.25
 WALL_TOLERANCE = 0.5
+INTERIOR_DOOR_WIDTH = 0.85
+BATH_DOOR_WIDTH = 0.80
+ENTRY_DOOR_WIDTH = 1.05
+CASED_OPENING_WIDTH = 2.20
 
 def _extract_lines(geom):
     if geom.is_empty:
@@ -21,39 +28,44 @@ def _shared_wall(poly_a, poly_b):
         return None
     return max(lines, key=lambda l: l.length)
 
-def _opening_from_wall(wall, width):
-    """Create a rectangular opening centered on the shared wall.
+def _opening_from_wall(wall, width, position="center"):
+    """Create a rectangular opening on the shared wall.
 
     We clamp the *effective* opening width so it never consumes the full
-    shared wall segment. This guarantees there are small wall piers at
-    both ends (e.g. between bedroom and bathroom), so 3D still has a
-    visible wall except at the doorway.
+    shared wall segment. This guarantees there are structural wall piers
+    at both ends (minimum 0.2m return), so 3D maintains clean framed walls.
     """
-
     L = wall.length
     if L <= 0:
         return None
 
-    # Cap opening to at most 70% of available wall to leave side piers
-    max_effective_width = 0.7 * L
+    # Cap opening so there are at least 0.15m - 0.2m piers at both ends
+    max_effective_width = max(0.4, L - 0.35)
     eff_width = min(width, max_effective_width)
 
     if eff_width <= 0:
         return None
 
-    mid = wall.interpolate(0.5, normalized=True)
+    # Determine center point of the opening along the wall
+    if position == "tucked" and L >= (eff_width + 0.5):
+        # Place opening near one end with a 0.25m structural return
+        t_pos = (0.25 + eff_width / 2.0) / L
+        mid = wall.interpolate(t_pos, normalized=True)
+    else:
+        # Centered opening
+        mid = wall.interpolate(0.5, normalized=True)
+
     (x1, y1), (x2, y2) = wall.coords[0], wall.coords[-1]
     dx, dy = x2 - x1, y2 - y1
 
-    # Avoid division by zero
     if L == 0:
         return None
 
     nx, ny = dx / L, dy / L
     px, py = -ny, nx  # perpendicular unit vector
 
-    w = eff_width / 2
-    d = DOOR_DEPTH / 2
+    w = eff_width / 2.0
+    d = DOOR_DEPTH / 2.0
 
     return Polygon([
         (mid.x - nx*w - px*d, mid.y - ny*w - py*d),
@@ -62,28 +74,27 @@ def _opening_from_wall(wall, width):
         (mid.x - nx*w + px*d, mid.y - ny*w + py*d),
     ])
 
-def generate_doors(rooms, opening_specs):
+def generate_doors_with_metadata(rooms, opening_specs):
     """
-    PURE GEOMETRY ENGINE.
+    Generate door opening polygons and rich metadata.
     
     Input:
       - rooms: dict {room_id: shapely.Polygon}
-      - opening_specs: list of (room_a, room_b, width)
-    
-    Rules:
-      - One opening per spec.
-      - No filtering, no validation, no rules.
-      - Width is provided by layout synthesizer (architectural logic lives there).
-      - External connections (e.g., front door, balcony) must be included as specs,
-        e.g., ("living", "exterior", 1.2) — "exterior" must be a polygon in `rooms`.
-    
+      - opening_specs: list of (room_a, room_b, width) or (room_a, room_b, width, opening_type)
+      
     Output:
-      - Unary union of all generated opening polygons.
-      - Returns None if no valid openings produced.
+      - (unary_union_geometry, list_of_opening_dicts)
     """
     openings = []
+    metadata = []
 
-    for r1, r2, width in opening_specs:
+    for spec in opening_specs:
+        if len(spec) == 4:
+            r1, r2, width, op_type = spec
+        else:
+            r1, r2, width = spec
+            op_type = "cased_opening" if width > 1.1 else "door"
+
         if r1 not in rooms or r2 not in rooms:
             continue
 
@@ -91,11 +102,28 @@ def generate_doors(rooms, opening_specs):
         if not wall:
             continue
 
-        opening = _opening_from_wall(wall, width)
+        # Position tucked for bedrooms to keep wall space for furniture & improve privacy
+        t1 = r1.split("_")[0].lower()
+        t2 = r2.split("_")[0].lower()
+        pos = "tucked" if ("bedroom" in (t1, t2) and op_type == "door") else "center"
+
+        opening = _opening_from_wall(wall, width, position=pos)
         if opening:
             openings.append(opening)
+            metadata.append({
+                "rooms": (r1, r2),
+                "width": width,
+                "type": op_type,
+                "polygon": opening,
+                "wall_length": wall.length,
+            })
 
-    if not openings:
-        return None
+    geom = unary_union(openings) if openings else None
+    return geom, metadata
 
-    return unary_union(openings)
+def generate_doors(rooms, opening_specs):
+    """
+    Backward-compatible geometry engine returning unary union of openings.
+    """
+    geom, _ = generate_doors_with_metadata(rooms, opening_specs)
+    return geom
