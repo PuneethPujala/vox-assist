@@ -1,7 +1,8 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import api from './lib/api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Create = lazy(() => import('./pages/Create'));
@@ -26,6 +27,11 @@ const PrivateRoute = () => {
 };
 
 function App() {
+    useEffect(() => {
+        // Pre-warm backend from cold sleep on app mount
+        api.get('/health').catch(() => {});
+    }, []);
+
     return (
         <AuthProvider>
             <Router>

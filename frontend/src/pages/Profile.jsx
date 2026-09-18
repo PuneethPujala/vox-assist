@@ -83,11 +83,11 @@ const Profile = () => {
     const fetchUserData = async () => {
         try {
             const [designsRes, userRes] = await Promise.all([
-                api.get('/api/v1/my-designs'),
+                api.get('/api/v1/my-designs').catch(() => ({ data: [] })),
                 api.get('/api/v1/user/me').catch(() => ({ data: { exists: false } }))
             ]);
 
-            const designData = designsRes.data;
+            const designData = designsRes.data || [];
             setDesigns(designData);
 
             if (userRes.data.exists) {

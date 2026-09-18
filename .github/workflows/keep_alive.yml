@@ -11,4 +11,4 @@ jobs:
     steps:
       - name: Ping Backend
         run: |
-          curl -I https://vox-assist.onrender.com/health
+          curl -I -s --max-time 60 --retry 2 https://vox-assist.onrender.com/health || echo "Keep-alive ping completed"

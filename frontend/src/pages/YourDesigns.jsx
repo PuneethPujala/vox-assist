@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import api, { API_BASE_URL } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Trash2, Edit2, Copy, X, Check, LayoutTemplate } from 'lucide-react';
+import { Trash2, Edit2, Copy, X, Check, LayoutTemplate, AlertCircle, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast, Toaster } from 'react-hot-toast';
 import { Skeleton } from '../components/ui/skeleton';
@@ -12,6 +12,8 @@ const YourDesigns = () => {
     const { currentUser } = useAuth();
     const [designs, setDesigns] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [loadingSeconds, setLoadingSeconds] = useState(0);
 
     const headerRef = useRef(null);
     const containerRef = useRef(null);
@@ -20,9 +22,24 @@ const YourDesigns = () => {
     const [editingDesign, setEditingDesign] = useState(null);
     const [editForm, setEditForm] = useState({ name: '', description: '' });
 
+    // Track loading duration for cold-start UX feedback
+    useEffect(() => {
+        let timer;
+        if (loading) {
+            timer = setInterval(() => {
+                setLoadingSeconds(s => s + 1);
+            }, 1000);
+        } else {
+            setLoadingSeconds(0);
+        }
+        return () => clearInterval(timer);
+    }, [loading]);
+
     useEffect(() => {
         if (currentUser) {
             fetchMyDesigns();
+        } else {
+            setLoading(false);
         }
     }, [currentUser]);
 
@@ -45,12 +62,17 @@ const YourDesigns = () => {
     }, [loading, designs]);
 
     const fetchMyDesigns = async () => {
+        setLoading(true);
+        setError(null);
+        setLoadingSeconds(0);
         try {
             const response = await api.get('/api/v1/my-designs');
-            setDesigns(response.data);
-        } catch (error) {
-            console.error("Error fetching designs:", error);
-            toast.error("Failed to load designs");
+            setDesigns(response.data || []);
+        } catch (err) {
+            console.error("Error fetching designs:", err);
+            const message = err.friendlyMessage || err.response?.data?.detail || "Failed to load designs from server.";
+            setError(message);
+            toast.error(message);
         } finally {
             setLoading(false);
         }
@@ -125,7 +147,28 @@ const YourDesigns = () => {
     if (loading) return (
         <div className="page-container">
             <div className="max-w-7xl mx-auto">
-                <Skeleton className="h-10 w-48 mb-8" />
+                <div className="flex justify-between items-center mb-6">
+                    <Skeleton className="h-10 w-48" />
+                    {loadingSeconds >= 4 && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-mono animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                            Backend waking up ({loadingSeconds}s)...
+                        </div>
+                    )}
+                </div>
+
+                {loadingSeconds >= 5 && (
+                    <div className="mb-8 p-4 rounded-2xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-3">
+                        <span className="text-base">⚡</span>
+                        <div>
+                            <p className="font-semibold mb-0.5">Waking up cloud server from sleep</p>
+                            <p className="text-amber-700 dark:text-amber-300/80 text-[11px] font-sans">
+                                Free cloud instances (Render) spin down when idle. Booting takes ~40–60 seconds on initial load. Your saved designs are safe and will appear momentarily!
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {[1, 2, 3, 4, 5, 6].map((i) => (
                         <div key={i} className="glass-card">
@@ -245,7 +288,24 @@ const YourDesigns = () => {
                     </div>
                 ))}
  
-                {designs.length === 0 && (
+                {error ? (
+                    <div className="col-span-full py-16 flex flex-col items-center justify-center text-center glass-card border border-red-200/70 dark:border-red-900/60 p-8 max-w-lg mx-auto bg-red-50/20 dark:bg-red-950/20 rounded-3xl">
+                        <div className="w-14 h-14 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded-2xl flex items-center justify-center mb-4">
+                            <AlertCircle size={26} />
+                        </div>
+                        <h3 className="text-lg font-medium text-charcoal dark:text-stone-100 mb-2">Connection Delayed / Timed Out</h3>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mb-6 max-w-sm font-sans">
+                            {error} <br />
+                            Free cloud instances go to sleep when idle. The backend may still be spinning up.
+                        </p>
+                        <button
+                            onClick={fetchMyDesigns}
+                            className="btn-primary flex items-center gap-2"
+                        >
+                            <RefreshCw size={14} /> Retry Connection
+                        </button>
+                    </div>
+                ) : designs.length === 0 && (
                     <div className="col-span-full py-20 flex flex-col items-center justify-center text-center glass-card border border-dashed border-stone-300/80 dark:border-stone-700 p-8">
                         <div className="w-16 h-16 bg-stone-50/50 dark:bg-stone-850/50 border border-stone-200/60 dark:border-stone-800 flex items-center justify-center rounded-2xl mb-4 text-stone-400 dark:text-stone-500 shadow-sm">
                             <LayoutTemplate size={28} />
