@@ -18,7 +18,7 @@ from engine.text_to_specs_v2 import ProximityLayoutGenerator
 from engine.layout_synthesizer_adjacency import synthesize_layout_from_spec
 from engine.resplan_to_3d import build_house_from_layout
 from engine.scoring_engine import ScoringEngine
-# from backend.engine.floorplan_2d_visualizer import draw_2d_floorplan
+from engine.validator import validate_layout
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +142,18 @@ class GenerationService:
                         logger.warning(f"Candidate {i}: synthesizer returned empty layout, skipping")
                         continue
 
-                    # B. Score
+                    # B. Score & Architectural Validation
                     adj_satisfaction = layout_candidate.get("adjacency_satisfaction", 1.0)
                     stats_candidate = ScoringEngine.evaluate(layout_candidate, adj_satisfaction)
-                    score_candidate = stats_candidate["average"]
+                    base_score = stats_candidate["average"]
+                    
+                    arch_check = validate_layout(
+                        layout_candidate,
+                        envelope_poly=layout_candidate.get("envelope")
+                    )
+                    feasibility = arch_check.get("feasibility_score", 100)
+                    stats_candidate["feasibility"] = feasibility
+                    score_candidate = round((base_score * 0.6) + (feasibility * 0.4), 1)
                     
                     # C. Generate 3D Model (Unique per candidate)
                     model_id = f"{generation_id}_{i}"
@@ -238,7 +246,8 @@ class GenerationService:
                         "score": score_candidate,
                         "model_url": model_url,
                         "seed": seed,
-                        "adjacency_satisfaction": adj_satisfaction
+                        "adjacency_satisfaction": adj_satisfaction,
+                        "architectural_check": arch_check
                     })
 
                 except ValueError as ve:
@@ -274,6 +283,7 @@ class GenerationService:
                 "stats": stats, # Detailed scores
                 "candidates": candidates, # The Best-of-N candidates for UI
                 "adjacency_pairs": merged_pairs,
+                "architectural_check": best_candidate.get("architectural_check"),
                 "message": "Layout generated successfully"
             }
 

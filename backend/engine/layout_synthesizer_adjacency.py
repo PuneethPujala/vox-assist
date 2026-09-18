@@ -10,6 +10,13 @@ from adjacency_rules import ADJACENCY_RULES, validate_adjacency
 from corridor_generator import generate_corridors
 from door_generator import generate_doors
 
+try:
+    from constraints.envelope import compute_building_envelope, is_within_envelope
+    from constraints.room_dimensions import compute_bounded_room_dimensions
+except ImportError:
+    from engine.constraints.envelope import compute_building_envelope, is_within_envelope
+    from engine.constraints.room_dimensions import compute_bounded_room_dimensions
+
 # =========================
 # CONSTANTS
 # =========================
@@ -49,13 +56,14 @@ def _random_aspect_ratio(base_ratio=1.5, variance=0.5):
     max_ratio = min(2.0, base_ratio + variance)
     return random.uniform(min_ratio, max_ratio)
 
-def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=None):
+def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=None, envelope_poly=None, room_type=None):
     """
-    Place room adjacent to base_poly.
+    Place room adjacent to base_poly with placement-time constraint pruning.
     Priority:
-    1. Matches preferred_sides (if provided).
-    2. MAXIMIZES shared perimeter with ALL existing polys (Gap Filling / Corner Logic).
-    3. Respects maximum footprint bounds (prevents sprawling layouts).
+    1. STRICTLY within building envelope (hard constraint pruning).
+    2. Matches preferred_sides (if provided).
+    3. MAXIMIZES shared perimeter with ALL existing polys (Gap Filling / Corner Logic).
+    4. Rewards exterior contact for bedrooms (egress feasibility).
     """
     # Safety check: prevent infinite sprawl
     MAX_DIMENSION = 100.0  # Maximum room dimension in meters
@@ -63,64 +71,82 @@ def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=No
         return None
     
     minx, miny, maxx, maxy = base_poly.bounds
+    base_w = maxx - minx
+    base_h = maxy - miny
     
-    all_placements = {
-        'right': box(maxx, miny, maxx + width, miny + height),
-        'left': box(minx - width, miny, minx, miny + height),
-        'top': box(minx, maxy, minx + width, maxy + height),
-        'bottom': box(minx, miny - height, minx + width, miny),
-    }
-    
-    # 1. Filter by Preference
-    if preferred_sides:
-        candidates = [all_placements[s] for s in preferred_sides if s in all_placements]
-        # Add non-preferred as fallback (lower priority? For now just mix them in if needed, but let's stick to strict preference first)
-        # Actually, if we are smart about scoring, we can consider ALL valid placements and just give a bonus to preferred sides.
-        # Let's try to stick to the requested preference strictness first, then fallback.
-    else:
-        candidates = list(all_placements.values())
-        
-    # If no preferred candidates logic (simplified above), just use all if preference failed?
-    # No, the previous logic fell back to others. Let's do:
     primary_candidates = []
     secondary_candidates = []
     
-    for s, p in all_placements.items():
-        if preferred_sides and s in preferred_sides:
-            primary_candidates.append(p)
-        else:
-            secondary_candidates.append(p)
+    # Try original orientation, and rotated orientation if distinct
+    orientations = [(width, height)]
+    if abs(width - height) > 0.3:
+        orientations.append((height, width))
+        
+    for (w, h) in orientations:
+        placements = {
+            'right': [
+                box(maxx, miny, maxx + w, miny + h),
+                box(maxx, maxy - h, maxx + w, maxy),
+                box(maxx, miny + (base_h - h)/2.0, maxx + w, miny + (base_h + h)/2.0)
+            ],
+            'left': [
+                box(minx - w, miny, minx, miny + h),
+                box(minx - w, maxy - h, minx, maxy),
+                box(minx - w, miny + (base_h - h)/2.0, minx, miny + (base_h + h)/2.0)
+            ],
+            'top': [
+                box(minx, maxy, minx + w, maxy + h),
+                box(maxx - w, maxy, maxx, maxy + h),
+                box(minx + (base_w - w)/2.0, maxy, minx + (base_w + w)/2.0, maxy + h)
+            ],
+            'bottom': [
+                box(minx, miny - h, minx + w, miny),
+                box(maxx - w, miny - h, maxx, miny),
+                box(minx + (base_w - w)/2.0, miny - h, minx + (base_w + w)/2.0, miny)
+            ]
+        }
+        for s, box_list in placements.items():
+            for p in box_list:
+                if preferred_sides and s in preferred_sides:
+                    primary_candidates.append(p)
+                else:
+                    secondary_candidates.append(p)
             
     # Try per-candidate validation
     valid_candidates = []
+    poly_list = list(existing_polys)
     
-    # Helper to check validity and score
+    # Helper to check validity and score at placement time
     def evaluate_candidate(cand, loops_list):
         # 1. Check Overlaps
         for existing in loops_list:
             if cand.intersects(existing):
-                if cand.intersection(existing).area > 1e-6:
+                if cand.intersection(existing).area > 1e-5:
                     return None # Invalid (Overlap)
+
+        # 2. Hard Constraint: Building Envelope Containment Pruning
+        if envelope_poly is not None:
+            if not is_within_envelope(cand, envelope_poly, tolerance_sqm=0.20):
+                return None # REJECT candidate outside envelope
         
-        # 2. Calculate Contact Score (Shared Perimeter)
+        # 3. Calculate Contact Score (Shared Perimeter)
         contact_length = 0
         cand_boundary = cand.boundary
         for existing in loops_list:
-            if cand.touches(existing) or cand.intersects(existing): # Intersects handles flush edges too
-                 intersection = cand.intersection(existing)
-                 # If intersection is line (touching), add length
-                 # Intersection of boxes is often a box or line
-                 # Actually `intersection` of two adjacent boxes is a LineString.
-                 common = cand_boundary.intersection(existing.boundary)
-                 if not common.is_empty:
-                     contact_length += common.length
+            if cand.touches(existing) or cand.intersects(existing):
+                common = cand_boundary.intersection(existing.boundary)
+                if not common.is_empty:
+                    contact_length += common.length
+
+        # 4. Bedroom Exterior Wall Bonus: favor outer boundary for natural light/egress
+        if room_type == "bedroom" and envelope_poly is not None:
+            ext_edge = cand_boundary.intersection(envelope_poly.boundary)
+            if not ext_edge.is_empty and ext_edge.length >= 1.5:
+                contact_length += 25.0 # Encourages bedroom exterior wall access
+                
         return contact_length
 
     # Check Primary
-    from shapely.geometry import Polygon
-    # existing_polys is a dict_values or list. Convert to list for iteration.
-    poly_list = list(existing_polys)
-    
     for cand in primary_candidates:
         score = evaluate_candidate(cand, poly_list)
         if score is not None:
@@ -136,12 +162,8 @@ def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=No
     if not valid_candidates:
         return None
         
-    # Sort by Contact Score (Descending)
-    # This favors "Corner Filling" (touching 2 sides > touching 1 side)
+    # Sort by Contact Score (Descending) - favors corner filling and compact geometry
     valid_candidates.sort(key=lambda x: x[1], reverse=True)
-    
-    # Pick top 1 (Deterministically best fit) or Weighted random?
-    # Deterministic encourages compactness.
     return valid_candidates[0][0]
 
 def _place_with_area_constraint(room_type, target_area, base_poly, existing_polys, preferred_sides=None, tolerance=0.15, max_retries=5):
@@ -305,6 +327,7 @@ def _try_place_with_soft_constraints(
     height: float,
     layouts: dict,
     adjacency_pairs: list,
+    envelope_poly=None,
 ):
     partners = _preferred_partners(room_type, layouts, adjacency_pairs)
     compact_sides = _get_compact_sides(layouts)
@@ -317,7 +340,15 @@ def _try_place_with_soft_constraints(
         if not is_valid:
             continue
 
-        poly = _place_adjacent(layouts[partner_name], width, height, layouts.values(), compact_sides)
+        poly = _place_adjacent(
+            layouts[partner_name], 
+            width, 
+            height, 
+            layouts.values(), 
+            compact_sides,
+            envelope_poly=envelope_poly,
+            room_type=room_type
+        )
         if poly:
             return poly
 
@@ -351,6 +382,13 @@ def synthesize_single_floor(spec, config=None):
     
     print("\n🏗️  Building house with architectural zones:")
     
+    # ── ENVELOPE BOUNDS CALCULATION ──────────────────────────────────────
+    total_area_sqm = sum(float(r.get("area", 10.0)) for r in spec.get("rooms", []))
+    env_info = compute_building_envelope(total_area_sqm, aspect_ratio=1.20, circulation_factor=0.20)
+    envelope_poly = env_info["polygon"]
+    env_w = env_info["width"]
+    env_h = env_info["height"]
+    
     # PHASE 1: CORE (LIVING)
     living_rooms = rooms_by_zone["public"]
     core_room = None
@@ -359,17 +397,19 @@ def synthesize_single_floor(spec, config=None):
         room = living_rooms[0]
         r_type = room["type"]
         area = float(room["area"])
-        # High Variance for Core
-        base_ar = random.choice([1.2, 1.5, 1.8, 0.8])
-        aspect_ratio = _random_aspect_ratio(base_ar, 0.5)
-        height = (area / aspect_ratio) ** 0.5
-        width = aspect_ratio * height
+        width, height = compute_bounded_room_dimensions(r_type, area)
+        if random.random() < 0.5:
+            width, height = height, width
+            
         room_index[r_type] = 1
         room_name = f"{r_type}_1"
-        poly = box(0, 0, width, height)
+        # Place core living room against the front-left exterior wall (x=0, y=0)
+        start_x = 0.0
+        start_y = 0.0
+        poly = box(start_x, start_y, start_x + width, start_y + height)
         layouts[room_name] = poly
         core_room = room_name
-        print(f"  🏠 CORE: {room_name} (hub)")
+        print(f"  🏠 CORE: {room_name} (hub placed at [{start_x:.1f}, {start_y:.1f}])")
         
         core_poly = layouts[core_room]
 
@@ -377,17 +417,27 @@ def synthesize_single_floor(spec, config=None):
         for room in living_rooms[1:]:
             r_type = room["type"]
             area = float(room["area"])
-            base_ar = random.choice([1.1, 1.4, 1.0])
-            aspect_ratio = _random_aspect_ratio(base_ar, 0.4)
-            height = (area / aspect_ratio) ** 0.5
-            width = aspect_ratio * height
+            width, height = compute_bounded_room_dimensions(r_type, area)
+            if random.random() < 0.5:
+                width, height = height, width
             room_index[r_type] = room_index.get(r_type, 0) + 1
             room_name = f"{r_type}_{room_index[r_type]}"
             
-            poly = _try_place_with_soft_constraints(r_type, width, height, layouts, adjacency_pairs)
+            poly = _try_place_with_soft_constraints(
+                r_type, width, height, layouts, adjacency_pairs,
+                envelope_poly=envelope_poly
+            )
             if not poly:
                 preferred_sides = _get_compact_sides(layouts)
-                poly = _place_adjacent(core_poly, width, height, layouts.values(), preferred_sides)
+                poly = _place_adjacent(
+                    core_poly, width, height, layouts.values(), preferred_sides,
+                    envelope_poly=envelope_poly, room_type=r_type
+                )
+            if not poly:
+                poly = _place_adjacent(
+                    core_poly, width, height, layouts.values(), None,
+                    envelope_poly=envelope_poly.buffer(1.5), room_type=r_type
+                )
             
             if poly:
                 layouts[room_name] = poly
@@ -395,7 +445,6 @@ def synthesize_single_floor(spec, config=None):
     
     if not core_room:
         # No explicit living room — try to use any placed room as core anchor.
-        # Dining, hallway, or any other public room can serve this function.
         if layouts:
             core_room = next(iter(layouts))
             core_poly = layouts[core_room]
@@ -405,43 +454,46 @@ def synthesize_single_floor(spec, config=None):
                 "Cannot synthesize layout: spec contains no placeable rooms. "
                 "Add at least one public room (living, dining, or hallway)."
             )
-    # core_poly is already defined above
     
     # ── PHASE 1.5: CIRCULATION (Hallway) ──────────────────────────────────
-    # Hallway acts as the architectural spine between the public zone and the
-    # private zone. It must be placed early so bedrooms can attach to it.
-    # Placement priority: adjacent to core (living or dining), on the side
-    # that maximises compactness, specifically pointing toward where bedrooms
-    # will be placed (the "interior" side of the core footprint).
     for room in rooms_by_zone.get("circulation", []):
         r_type = room["type"]
         area   = float(room["area"])
-        # Hallways are rectangular. Use random.uniform directly instead of
-        # _random_aspect_ratio(2.5, 0.5) because that helper clamps both bounds
-        # to 2.0 (max(0.8, 2.0) and min(2.0, 3.0)), producing the identical
-        # rectangle on every seed and making hallway placement fail consistently.
-        aspect_ratio = random.uniform(1.5, 3.0)
-        height = (area / aspect_ratio) ** 0.5
-        width  = aspect_ratio * height
+        width, height = compute_bounded_room_dimensions(r_type, area)
+        if random.random() < 0.5:
+            width, height = height, width
         room_index[r_type] = room_index.get(r_type, 0) + 1
         room_name = f"{r_type}_{room_index[r_type]}"
 
-        poly = _try_place_with_soft_constraints(r_type, width, height, layouts, adjacency_pairs)
+        poly = _try_place_with_soft_constraints(
+            r_type, width, height, layouts, adjacency_pairs,
+            envelope_poly=envelope_poly
+        )
 
         if not poly:
-            # Prefer compact sides of core (builds inward, leaves perimeter for daylight)
             compact_sides = _get_compact_sides(layouts)
-            poly = _place_adjacent(core_poly, width, height, layouts.values(), compact_sides)
+            poly = _place_adjacent(
+                core_poly, width, height, layouts.values(), compact_sides,
+                envelope_poly=envelope_poly, room_type=r_type
+            )
 
         if not poly:
-            # Last resort: any side of core
-            poly = _place_adjacent(core_poly, width, height, layouts.values())
+            poly = _place_adjacent(
+                core_poly, width, height, layouts.values(), None,
+                envelope_poly=envelope_poly, room_type=r_type
+            )
+
+        if not poly:
+            poly = _place_adjacent(
+                core_poly, width, height, layouts.values(), None,
+                envelope_poly=envelope_poly.buffer(1.5), room_type=r_type
+            )
 
         if poly:
             layouts[room_name] = poly
             print(f"  🚪 CIRCULATION: {room_name} (spine adjacent to core)")
         else:
-            print(f"  ⚠️  CIRCULATION: {room_name} could not be placed — will retry in Phase 5")
+            print(f"  ⚠️  CIRCULATION: {room_name} could not be placed — will retry in Phase 6")
     # ────────────────────────────────────────────────────────────────────────
     
     # PHASE 2: KITCHEN
@@ -449,67 +501,106 @@ def synthesize_single_floor(spec, config=None):
     for room in kitchen_rooms:
         r_type = room["type"]
         area = float(room["area"])
-        base_ar = random.choice([1.0, 1.3, 0.9])
-        aspect_ratio = _random_aspect_ratio(base_ar, 0.3)
-        height = (area / aspect_ratio) ** 0.5
-        width = aspect_ratio * height
+        width, height = compute_bounded_room_dimensions(r_type, area)
+        if random.random() < 0.5:
+            width, height = height, width
         room_index[r_type] = room_index.get(r_type, 0) + 1
         room_name = f"{r_type}_{room_index[r_type]}"
         
         # Priority: Attach to DINING if exists, else Core
         dining_rooms = [r for r in layouts.keys() if "dining" in r]
         
-        poly = _try_place_with_soft_constraints(r_type, width, height, layouts, adjacency_pairs)
+        poly = _try_place_with_soft_constraints(
+            r_type, width, height, layouts, adjacency_pairs,
+            envelope_poly=envelope_poly
+        )
         if not poly and dining_rooms:
-            # Try attaching to dining first (Living -> Dining -> Kitchen flow)
             for dining in dining_rooms:
                 preferred_sides = _get_compact_sides(layouts)
-                poly = _place_adjacent(layouts[dining], width, height, layouts.values(), preferred_sides)
+                poly = _place_adjacent(
+                    layouts[dining], width, height, layouts.values(), preferred_sides,
+                    envelope_poly=envelope_poly, room_type=r_type
+                )
                 if poly:
                     print(f"  🍳 SEMI-PUBLIC: {room_name} (attached to {dining})")
                     break
         
         if not poly:
-             # Fallback to Core
              preferred_sides = _get_compact_sides(layouts)
-             poly = _place_adjacent(core_poly, width, height, layouts.values(), preferred_sides[:2])
+             poly = _place_adjacent(
+                 core_poly, width, height, layouts.values(), preferred_sides[:2],
+                 envelope_poly=envelope_poly, room_type=r_type
+             )
              if poly:
                  print(f"  🍳 SEMI-PUBLIC: {room_name} (attached to core)")
+
+        if not poly:
+             poly = _place_adjacent(
+                 core_poly, width, height, layouts.values(), None,
+                 envelope_poly=envelope_poly.buffer(1.5), room_type=r_type
+             )
         
         if poly:
             layouts[room_name] = poly
 
     # PHASE 3: BEDROOMS
     bedrooms = rooms_by_zone["private"]
-    # Randomize order of bedrooms
     random.shuffle(bedrooms)
     bedroom_names = []
+    circulation_rooms = [r for r in layouts.keys() if "hallway" in r]
+
     for idx, room in enumerate(bedrooms):
         r_type = room["type"]
         area = float(room["area"])
-        base_ar = random.choice([1.1, 1.4, 1.0])
-        aspect_ratio = _random_aspect_ratio(base_ar, 0.4)
-        height = (area / aspect_ratio) ** 0.5
-        width = aspect_ratio * height
+        width, height = compute_bounded_room_dimensions(r_type, area)
+        if random.random() < 0.5:
+            width, height = height, width
         room_index[r_type] = room_index.get(r_type, 0) + 1
         room_name = f"{r_type}_{room_index[r_type]}"
         
-        # Use Compactness Bias
         preferred_sides = _get_compact_sides(layouts)
         
-        poly = _try_place_with_soft_constraints(r_type, width, height, layouts, adjacency_pairs)
+        poly = _try_place_with_soft_constraints(
+            r_type, width, height, layouts, adjacency_pairs,
+            envelope_poly=envelope_poly
+        )
+        
+        # Prefer attaching to circulation hallway if available
+        if not poly and circulation_rooms:
+            for hall in circulation_rooms:
+                poly = _place_adjacent(
+                    layouts[hall], width, height, layouts.values(), preferred_sides,
+                    envelope_poly=envelope_poly, room_type=r_type
+                )
+                if poly:
+                    print(f"  🛏️  PRIVATE: {room_name} (attached to {hall})")
+                    break
+
         if not poly:
-            # Prefer attaching to Core (Hall/Living) to ensure access
-            # NOT attaching to other bedrooms to avoid daisy-chaining without doors
-            poly = _place_adjacent(core_poly, width, height, layouts.values(), preferred_sides[:3])
+            poly = _place_adjacent(
+                core_poly, width, height, layouts.values(), preferred_sides[:3],
+                envelope_poly=envelope_poly, room_type=r_type
+            )
         
         if not poly:
-             # Try other public rooms (Dining?)
              public_rooms = [r for r in layouts.keys() if "dining" in r or "living" in r]
              for pub in public_rooms:
-                 poly = _place_adjacent(layouts[pub], width, height, layouts.values(), preferred_sides)
+                 poly = _place_adjacent(
+                     layouts[pub], width, height, layouts.values(), preferred_sides,
+                     envelope_poly=envelope_poly, room_type=r_type
+                 )
                  if poly:
                      print(f"  🛏️  PRIVATE: {room_name} (attached to {pub})")
+                     break
+
+        if not poly:
+             # Buffer relaxation
+             for anchor in list(layouts.keys()):
+                 poly = _place_adjacent(
+                     layouts[anchor], width, height, layouts.values(), None,
+                     envelope_poly=envelope_poly.buffer(2.0), room_type=r_type
+                 )
+                 if poly:
                      break
 
         if poly:
@@ -523,19 +614,21 @@ def synthesize_single_floor(spec, config=None):
     # PHASE 4: SERVICES (Bathrooms, Storage, Utility)
     services = rooms_by_zone["service"]
     study_names = [name for name in layouts.keys() if name.startswith("study")]
-    
     bathroom_idx = 0
     
     for idx, room in enumerate(services):
         r_type = room["type"]
         area = float(room["area"])
-        aspect_ratio = _random_aspect_ratio(1.0, 0.2)
-        height = (area / aspect_ratio) ** 0.5
-        width = aspect_ratio * height
+        width, height = compute_bounded_room_dimensions(r_type, area)
+        if random.random() < 0.5:
+            width, height = height, width
         room_index[r_type] = room_index.get(r_type, 0) + 1
         room_name = f"{r_type}_{room_index[r_type]}"
         
-        poly = _try_place_with_soft_constraints(r_type, width, height, layouts, adjacency_pairs)
+        poly = _try_place_with_soft_constraints(
+            r_type, width, height, layouts, adjacency_pairs,
+            envelope_poly=envelope_poly
+        )
         
         # Strategy 1: Ensuite Bathroom (attach to corresponding bedroom, or study if bedrooms are full)
         if not poly and r_type == "bathroom":
@@ -543,53 +636,73 @@ def synthesize_single_floor(spec, config=None):
             if bathroom_idx < len(bedroom_names):
                 target_room = bedroom_names[bathroom_idx]
                 bathroom_idx += 1
-            elif study_names: # Fallback to study if we have more bathrooms than bedrooms
-                target_room = study_names[0] # Try to attach to first study
-                study_names.pop(0) # Consume it so multiple baths don't crowd it
+            elif study_names:
+                target_room = study_names[0]
+                study_names.pop(0)
                 bathroom_idx += 1
                 
             if target_room:
-                 # Use compactness bias even for ensuites
                  preferred_sides = _get_compact_sides(layouts)
-                 poly = _place_adjacent(layouts[target_room], width, height, layouts.values(), preferred_sides)
+                 poly = _place_adjacent(
+                     layouts[target_room], width, height, layouts.values(), preferred_sides,
+                     envelope_poly=envelope_poly, room_type=r_type
+                 )
                  if poly:
                      print(f"  🚿 SERVICE: {room_name} (ensuite to {target_room})")
 
-        # Strategy 2: Common Bath / Storage / Utility
-        # Attach to Hall/Living or Kitchen or Corridor
+        # Strategy 2: Common Bath / Storage / Utility (plumbing & service clustering)
         if not poly:
             preferred_targets = []
-            
-            # Storage/Utility prefers Kitchen
-            if r_type in ["storage", "utility", "pantry"]:
-                preferred_targets.extend([n for n in layouts if "kitchen" in n])
-            
-            # Common Bath prefers Living/Hall
             if r_type == "bathroom":
+                # Wet wall clustering: bathroom near other bathrooms or kitchen
+                preferred_targets.extend([n for n in layouts if "bathroom" in n])
+                preferred_targets.extend([n for n in layouts if "kitchen" in n])
+                preferred_targets.extend([n for n in layouts if "hallway" in n])
                 preferred_targets.extend([n for n in layouts if "living" in n])
-                preferred_targets.extend([n for n in layouts if "study" in n]) # Fallback to any study
-                
-            # Fallback for all: Living/Hall
-            preferred_targets.extend([n for n in layouts if "living" in n])
+                preferred_targets.extend([n for n in layouts if "study" in n])
+            elif r_type in ["storage", "utility", "pantry"]:
+                preferred_targets.extend([n for n in layouts if "kitchen" in n])
+                preferred_targets.extend([n for n in layouts if "hallway" in n])
+                preferred_targets.extend([n for n in layouts if "living" in n])
+            else:
+                preferred_targets.extend([n for n in layouts if "living" in n])
             
-            # Try preferred
             compact_sides = _get_compact_sides(layouts)
             for target in preferred_targets:
                 if target in layouts:
-                    poly = _place_adjacent(layouts[target], width, height, layouts.values(), compact_sides)
+                    poly = _place_adjacent(
+                        layouts[target], width, height, layouts.values(), compact_sides,
+                        envelope_poly=envelope_poly, room_type=r_type
+                    )
                     if poly:
                         print(f"  🔧 SERVICE: {room_name} (attached to {target})")
                         break
         
-        # Strategy 3: Desperation (Attach to anything anywhere)
+        # Strategy 3: Envelope contained fallback
         if not poly:
              all_rooms = list(layouts.keys())
              random.shuffle(all_rooms)
              compact_sides = _get_compact_sides(layouts)
              for target in all_rooms:
-                 poly = _place_adjacent(layouts[target], width, height, layouts.values(), compact_sides)
+                 poly = _place_adjacent(
+                     layouts[target], width, height, layouts.values(), compact_sides,
+                     envelope_poly=envelope_poly, room_type=r_type
+                 )
                  if poly:
                      print(f"  🔧 SERVICE: {room_name} (fallback attached to {target})")
+                     break
+
+        # Strategy 4: Buffer relaxation fallback
+        if not poly:
+             all_rooms = list(layouts.keys())
+             random.shuffle(all_rooms)
+             for target in all_rooms:
+                 poly = _place_adjacent(
+                     layouts[target], width, height, layouts.values(), None,
+                     envelope_poly=envelope_poly.buffer(2.0), room_type=r_type
+                 )
+                 if poly:
+                     print(f"  🔧 SERVICE: {room_name} (buffer fallback attached to {target})")
                      break
 
         if poly:
@@ -601,74 +714,63 @@ def synthesize_single_floor(spec, config=None):
     for room in rooms_by_zone["other"]:
         r_type = room["type"]
         area = float(room["area"])
-        aspect_ratio = _random_aspect_ratio(1.0, 0.3)
-        height = (area / aspect_ratio) ** 0.5
-        width = aspect_ratio * height
+        width, height = compute_bounded_room_dimensions(r_type, area)
+        if random.random() < 0.5:
+            width, height = height, width
         room_index[r_type] = room_index.get(r_type, 0) + 1
         room_name = f"{r_type}_{room_index[r_type]}"
         
-        poly = _try_place_with_soft_constraints(r_type, width, height, layouts, adjacency_pairs)
+        poly = _try_place_with_soft_constraints(
+            r_type, width, height, layouts, adjacency_pairs,
+            envelope_poly=envelope_poly
+        )
 
         # Balcony prefers living or bedroom
         if not poly and r_type == "balcony":
             targets = [name for name in layouts.keys() if name.startswith("living") or name.startswith("bedroom")]
             for target in targets:
-                poly = _place_adjacent(layouts[target], width, height, layouts.values())
+                poly = _place_adjacent(
+                    layouts[target], width, height, layouts.values(),
+                    envelope_poly=envelope_poly.buffer(1.5), room_type=r_type
+                )
                 if poly:
                     break
         elif not poly:
-            poly = _place_adjacent(core_poly, width, height, layouts.values())
+            poly = _place_adjacent(
+                core_poly, width, height, layouts.values(),
+                envelope_poly=envelope_poly.buffer(1.5), room_type=r_type
+            )
         
         if poly:
             layouts[room_name] = poly
             print(f"  📦 OTHER: {room_name}")
     
     # PHASE 6: FINAL RETRY (Desperation pass for any unplaced rooms)
-    # Check what's missing
-    for room in spec.get("rooms", []):
-        r_type = room["type"]
-        # Determine if this room was actually placed
-        # We need to map back r_type to possible names: {r_type}_1, {r_type}_2, etc. or just {r_type}
-        # Actually, let's just track placed rooms more explicitly or check the counts.
-        pass
-
-    # A simpler way: just iterate all rooms in the spec and if they aren't in layouts, TRY AGAIN.
-    # Note: we need to handle the name mapping exactly as in previous phases.
-    re_counts = {}
-    for room in spec.get("rooms", []):
-        r_type = room["type"]
-        re_counts[r_type] = re_counts.get(r_type, 0) + 1
-        r_name = f"{r_type}_{re_counts[r_type]}" if any(r2["type"] == r_type and idx != i for idx, r2 in enumerate(spec["rooms"])) else r_type
-        # Wait, the naming logic in phases is a bit varied. Let's use a more robust check.
-        
-    # Better: just collect all names from layouts
     placed_names = set(layouts.keys())
-    # Re-run a simplified version of the logic to find what's missing
     type_tracker = {}
     for room in spec.get("rooms", []):
         t = room["type"]
         type_tracker[t] = type_tracker.get(t, 0) + 1
-        name = f"{t}_{type_tracker[t]}" # (standard naming)
-        alt_name = t if type_tracker[t] == 1 else "MISSING" # handle cases where name is just type
+        name = f"{t}_{type_tracker[t]}"
+        alt_name = t if type_tracker[t] == 1 else "MISSING"
         
         if name not in placed_names and alt_name not in placed_names:
-            # TRY TO PLACE AT ALL COSTS
             area = float(room["area"])
-            aspect = 1.2
-            h = (area / aspect) ** 0.5
-            w = aspect * h
+            w, h = compute_bounded_room_dimensions(t, area)
             
-            # Try any existing room as anchor
             all_targets = list(layouts.keys())
             random.shuffle(all_targets)
             for target in all_targets:
-                poly = _place_adjacent(layouts[target], w, h, layouts.values())
+                poly = _place_adjacent(
+                    layouts[target], w, h, layouts.values(), None,
+                    envelope_poly=envelope_poly.buffer(2.5), room_type=t
+                )
                 if poly:
                     layouts[name] = poly
                     print(f"  🩹 RECOVERED: {name} (Phase 6)")
                     break
 
-    return layouts
+    return layouts, envelope_poly
 
 def _validate_room_counts(spec, placed_rooms):
     """
@@ -719,7 +821,7 @@ def _validate_room_counts(spec, placed_rooms):
 
 def synthesize_layout_from_spec(spec, config=None):
     cfg = {**DEFAULT_CONFIG, **(config or {})}
-    rooms = synthesize_single_floor(spec, config)
+    rooms, envelope_poly = synthesize_single_floor(spec, config)
     
     # Soft validation: log whether all rooms were placed, but never abort.
     # A partial layout (e.g. hallway couldn't be placed) still gets scored
@@ -832,4 +934,5 @@ def synthesize_layout_from_spec(spec, config=None):
         "entrance": entrance,
         "score": score,
         "adjacency_satisfaction": adjacency_satisfaction,
+        "envelope": envelope_poly,
     }

@@ -6,7 +6,7 @@ import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../components/ThemeProvider';
 import api, { API_BASE_URL } from '../lib/api';
-import { Loader2, Send, Plus, Trash2, ArrowRight, ArrowLeft, Printer, Box, Link2, Mic, MicOff, Loader } from 'lucide-react';
+import { Loader2, Send, Plus, Trash2, ArrowRight, ArrowLeft, Printer, Box, Link2, Mic, MicOff, Loader, ShieldCheck, CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import gsap from 'gsap';
@@ -230,6 +230,96 @@ const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSp
     );
 };
 
+const ArchitecturalFeasibilityCard = ({ archCheck }) => {
+    const [expanded, setExpanded] = useState(true);
+    if (!archCheck) return null;
+
+    const {
+        feasibility_score = 0,
+        checks_passed = 0,
+        checks_total = 7,
+        checks = []
+    } = archCheck;
+
+    const isAllPass = checks_passed === checks_total;
+
+    return (
+        <div className="mb-6 rounded-2xl border border-stone-200/70 dark:border-stone-800 bg-white/80 dark:bg-stone-900/80 p-4 shadow-sm backdrop-blur-sm transition-all">
+            <div 
+                className="flex items-center justify-between cursor-pointer select-none"
+                onClick={() => setExpanded(!expanded)}
+            >
+                <div className="flex items-center gap-2">
+                    <ShieldCheck size={16} className={isAllPass ? "text-emerald-500" : "text-amber-500"} />
+                    <span className="text-xs font-bold text-stone-800 dark:text-stone-100 uppercase tracking-wider font-mono">
+                        Architectural Feasibility
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                        isAllPass
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/50"
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/50"
+                    }`}>
+                        {isAllPass ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
+                        {checks_passed} / {checks_total} Checks Satisfied
+                    </span>
+                    {expanded ? <ChevronUp size={14} className="text-stone-400" /> : <ChevronDown size={14} className="text-stone-400" />}
+                </div>
+            </div>
+
+            {/* Score Bar */}
+            <div className="mt-3">
+                <div className="flex justify-between text-[10px] font-mono mb-1">
+                    <span className="text-stone-500 dark:text-stone-400">Constraint Satisfaction</span>
+                    <span className="font-bold text-stone-700 dark:text-stone-200">{feasibility_score}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+                    <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                            feasibility_score >= 85 ? "bg-emerald-500" : feasibility_score >= 70 ? "bg-amber-500" : "bg-red-500"
+                        }`}
+                        style={{ width: `${feasibility_score}%` }} 
+                    />
+                </div>
+            </div>
+
+            {/* Expandable Check List */}
+            {expanded && (
+                <div className="mt-4 space-y-2.5 pt-3 border-t border-stone-100 dark:border-stone-800">
+                    {checks.map((chk) => (
+                        <div key={chk.id} className="flex items-start gap-2.5 text-xs">
+                            <div className="mt-0.5 flex-shrink-0">
+                                {chk.status === 'pass' && <CheckCircle2 size={13} className="text-emerald-500" />}
+                                {chk.status === 'warn' && <AlertTriangle size={13} className="text-amber-500" />}
+                                {chk.status === 'fail' && <XCircle size={13} className="text-red-500" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-stone-800 dark:text-stone-200 text-[11px]">{chk.name}</span>
+                                    <span className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.2 rounded ${
+                                        chk.status === 'pass' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/40' :
+                                        chk.status === 'warn' ? 'text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/40' :
+                                        'text-red-600 dark:text-red-400 bg-red-50/70 dark:bg-red-950/40'
+                                    }`}>
+                                        {chk.status}
+                                    </span>
+                                </div>
+                                <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-0.5 leading-tight">
+                                    {chk.details}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                    <div className="pt-2 mt-2 border-t border-stone-100/80 dark:border-stone-800/80 text-[9px] text-stone-400 dark:text-stone-500 italic font-sans leading-relaxed">
+                        * Architectural feasibility check for conceptual floor planning. Consult a licensed architect for building code permit drawings.
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const Create = () => {
     const { theme } = useTheme();
     const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -271,6 +361,7 @@ const Create = () => {
     const [hoveredRoomId, setHoveredRoomId] = useState(null);
     const [candidates, setCandidates] = useState([]);
     const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+    const [archCheck, setArchCheck] = useState(null);
     const sceneRef = useRef();
     const glRef = useRef();
     const fullLayoutRef = useRef(null);
@@ -621,6 +712,7 @@ const Create = () => {
         setModelUrl(null);
         setLayoutSpec(null);
         setLayoutData(null);
+        setArchCheck(null);
 
         // Simulate Status Stream
         const statuses = ["Analyzing constraints...", "Generating adjacency graphs...", "Optimizing layouts...", "Rendering 3D Models...", "Finalizing Details..."];
@@ -714,6 +806,7 @@ const Create = () => {
         fullLayoutRef.current = candidate.layout;
         setScore(candidate.score);
         setStats(candidate.stats);
+        setArchCheck(candidate.architectural_check || null);
     };
 
     const resetWizard = () => {
@@ -721,6 +814,7 @@ const Create = () => {
         setCandidates([]);
         setModelUrl(null);
         fullLayoutRef.current = null;
+        setArchCheck(null);
     };
     const hoveredPoly = hoveredRoomId && layoutData ? layoutData[hoveredRoomId] : null;
     const hoveredColor = hoveredRoomId && layoutSpec ? layoutSpec.rooms.find(r => r.id === hoveredRoomId)?.color : null;
@@ -1087,6 +1181,9 @@ const Create = () => {
                                         </div>
                                     ))}
                                 </div>
+
+                                {/* Architectural Feasibility Scorecard */}
+                                <ArchitecturalFeasibilityCard archCheck={archCheck} />
 
                                 {/* Generated Area Distribution Pie */}
                                 <div className="mb-6 h-56 bg-white/80 dark:bg-stone-900/80 rounded-3xl border border-stone-200/60 dark:border-stone-800 p-4 flex flex-col relative w-full items-center justify-center shadow-inner">
