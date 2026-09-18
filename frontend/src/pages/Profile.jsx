@@ -3,14 +3,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { auth, storage } from '../firebase';
 import { updateProfile, updatePassword } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import axios from 'axios';
+import api from '../lib/api';
 import { AnimatePresence, motion } from 'framer-motion';
-import { User, Mail, Calendar, Box, Activity, ArrowRight, Settings as SettingsIcon, LayoutTemplate, AlertTriangle } from 'lucide-react';
+import { Mail, Calendar, Box, Activity, ArrowRight, Settings as SettingsIcon, LayoutTemplate, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Card, CardContent } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
 import gsap from 'gsap';
 
@@ -85,10 +82,9 @@ const Profile = () => {
 
     const fetchUserData = async () => {
         try {
-            const token = await currentUser.getIdToken();
             const [designsRes, userRes] = await Promise.all([
-                axios.get(`${import.meta.env.VITE_API_URL}/api/v1/my-designs`, { headers: { Authorization: `Bearer ${token}` } }),
-                axios.get(`${import.meta.env.VITE_API_URL}/api/v1/user/me`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: { exists: false } }))
+                api.get('/api/v1/my-designs'),
+                api.get('/api/v1/user/me').catch(() => ({ data: { exists: false } }))
             ]);
 
             const designData = designsRes.data;
@@ -119,13 +115,12 @@ const Profile = () => {
                 await updateProfile(auth.currentUser, { displayName });
 
                 // Also update in mongo
-                const token = await currentUser.getIdToken();
-                await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/user/profile`, {
+                await api.post('/api/v1/user/profile', {
                     email: currentUser.email,
                     full_name: displayName,
                     photo_url: currentUser.photoURL,
                     firebase_uid: currentUser.uid
-                }, { headers: { Authorization: `Bearer ${token}` } });
+                });
             }
             if (newPassword) {
                 await updatePassword(auth.currentUser, newPassword);
@@ -154,13 +149,12 @@ const Profile = () => {
             await updateProfile(auth.currentUser, { photoURL });
 
             // Sync with backend
-            const token = await currentUser.getIdToken();
-            await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/user/profile`, {
+            await api.post('/api/v1/user/profile', {
                 email: currentUser.email,
                 full_name: currentUser.displayName,
                 photo_url: photoURL,
                 firebase_uid: currentUser.uid
-            }, { headers: { Authorization: `Bearer ${token}` } });
+            });
 
             setMessage({ type: 'success', text: 'Avatar updated successfully!' });
             window.location.reload();
@@ -197,7 +191,7 @@ const Profile = () => {
                         <Skeleton className="h-6 w-32 rounded-full mt-2" />
                     </div>
                 </div>
-                <div className="flex gap-6 mt-8 border-b border-stone-200 pb-4">
+                <div className="flex gap-6 mt-8 border-b border-stone-200 dark:border-stone-800 pb-4">
                     <Skeleton className="h-6 w-24" />
                     <Skeleton className="h-6 w-24" />
                 </div>
@@ -219,11 +213,11 @@ const Profile = () => {
                     className="glass-card flex flex-col md:flex-row items-center md:items-start gap-8 opacity-0"
                 >
                     <div className="relative group cursor-pointer" onClick={() => document.getElementById('avatar-upload').click()}>
-                        <div className={`w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-stone-200 ${uploadingAvatar ? 'opacity-50' : 'group-hover:opacity-85'} transition-opacity`}>
+                        <div className={`w-32 h-32 rounded-full overflow-hidden border-4 border-white dark:border-stone-800 shadow-lg bg-stone-200 dark:bg-stone-800 ${uploadingAvatar ? 'opacity-50' : 'group-hover:opacity-85'} transition-opacity`}>
                             {currentUser.photoURL ? (
                                 <img src={currentUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
                             ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-charcoal text-white text-4xl font-light font-mono">
+                                <div className="w-full h-full flex items-center justify-center bg-charcoal dark:bg-stone-100 text-white dark:text-stone-900 text-4xl font-light font-mono">
                                     {currentUser.email?.[0].toUpperCase()}
                                 </div>
                             )}
@@ -242,20 +236,20 @@ const Profile = () => {
                     </div>
  
                     <div className="flex-1 text-center md:text-left">
-                        <h1 className="text-2xl font-light text-charcoal mb-2">
+                        <h1 className="text-2xl font-light text-charcoal dark:text-stone-100 mb-2">
                             {currentUser.displayName || "Architect"}
                         </h1>
-                        <div className="flex flex-col md:flex-row gap-4 text-stone-500 text-xs md:items-center font-mono">
+                        <div className="flex flex-col md:flex-row gap-4 text-stone-500 dark:text-stone-400 text-xs md:items-center font-mono">
                             <span className="flex items-center gap-2 justify-center md:justify-start">
                                 <Mail size={14} className="text-stone-400" /> {currentUser.email}
                             </span>
-                            <span className="hidden md:inline text-stone-300">•</span>
+                            <span className="hidden md:inline text-stone-300 dark:text-stone-700">•</span>
                             <span className="flex items-center gap-2 justify-center md:justify-start">
                                 <Calendar size={14} className="text-stone-400" /> Joined {currentUser.metadata.creationTime ? new Date(currentUser.metadata.creationTime).toLocaleDateString() : 'Recently'}
                             </span>
                         </div>
                         {mongoUser && (
-                            <div className="mt-4 inline-block bg-stone-100 border border-stone-200/50 text-charcoal px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono">
+                            <div className="mt-4 inline-block bg-stone-100 dark:bg-stone-850 border border-stone-200/50 dark:border-stone-800 text-charcoal dark:text-stone-200 px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider font-mono">
                                 Role: {mongoUser.role}
                             </div>
                         )}
@@ -263,16 +257,16 @@ const Profile = () => {
                 </div>
  
                 {/* Tabs */}
-                <div className="flex gap-6 mt-8 border-b border-stone-200">
+                <div className="flex gap-6 mt-8 border-b border-stone-200 dark:border-stone-800">
                     <button
                         onClick={() => setActiveTab('overview')}
-                        className={`pb-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 ${activeTab === 'overview' ? 'border-charcoal text-charcoal' : 'border-transparent text-stone-400 hover:text-charcoal'}`}
+                        className={`pb-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 ${activeTab === 'overview' ? 'border-charcoal dark:border-stone-200 text-charcoal dark:text-stone-100' : 'border-transparent text-stone-400 hover:text-charcoal dark:hover:text-stone-200'}`}
                     >
                         <LayoutTemplate size={14} /> Overview
                     </button>
                     <button
                         onClick={() => setActiveTab('settings')}
-                        className={`pb-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 ${activeTab === 'settings' ? 'border-charcoal text-charcoal' : 'border-transparent text-stone-400 hover:text-charcoal'}`}
+                        className={`pb-3 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all border-b-2 ${activeTab === 'settings' ? 'border-charcoal dark:border-stone-200 text-charcoal dark:text-stone-100' : 'border-transparent text-stone-400 hover:text-charcoal dark:hover:text-stone-200'}`}
                     >
                         <SettingsIcon size={14} /> Settings
                     </button>
@@ -289,8 +283,8 @@ const Profile = () => {
                             </div>
  
                             <div className="flex justify-between items-center">
-                                <h2 className="text-xl font-light text-charcoal">Recent Activity</h2>
-                                <Link to="/my-designs" className="text-stone-500 hover:text-charcoal flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
+                                <h2 className="text-xl font-light text-charcoal dark:text-stone-100">Recent Activity</h2>
+                                <Link to="/my-designs" className="text-stone-500 dark:text-stone-400 hover:text-charcoal dark:hover:text-stone-200 flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
                                     View All <ArrowRight size={14} />
                                 </Link>
                             </div>
@@ -298,23 +292,23 @@ const Profile = () => {
                             <div ref={activityGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {designs.slice(0, 3).map((design, idx) => (
                                     <div key={idx} className="glass-card-interactive opacity-0">
-                                        <h3 className="font-semibold text-charcoal truncate">{design.prompt || "Untitled Project"}</h3>
-                                        <p className="text-[10px] font-mono text-stone-400 mt-2 font-medium">{formatDistanceToNow(new Date(design.created_at), { addSuffix: true })}</p>
+                                        <h3 className="font-semibold text-charcoal dark:text-stone-100 truncate">{design.prompt || "Untitled Project"}</h3>
+                                        <p className="text-[10px] font-mono text-stone-400 dark:text-stone-500 mt-2 font-medium">{formatDistanceToNow(new Date(design.created_at), { addSuffix: true })}</p>
                                     </div>
                                 ))}
                                 {designs.length === 0 && (
-                                    <div className="col-span-full py-12 text-center text-xs font-mono text-stone-400 bg-stone-50/50 rounded-3xl border border-dashed border-stone-200">
-                                        No configurations saved yet. <Link to="/create" className="underline font-bold text-stone-700">Start wizard</Link>
+                                    <div className="col-span-full py-12 text-center text-xs font-mono text-stone-400 dark:text-stone-500 bg-stone-50/50 dark:bg-stone-900/50 rounded-3xl border border-dashed border-stone-200 dark:border-stone-800">
+                                        No configurations saved yet. <Link to="/create" className="underline font-bold text-stone-700 dark:text-stone-200">Start wizard</Link>
                                     </div>
                                 )}
                             </div>
                         </div>
                     ) : (
                         <div ref={settingsFormRef} className="max-w-2xl glass-card">
-                            <h2 className="text-xl font-light text-charcoal mb-6 opacity-0">Profile Configuration</h2>
+                            <h2 className="text-xl font-light text-charcoal dark:text-stone-100 mb-6 opacity-0">Profile Configuration</h2>
  
                             {message.text && (
-                                <div className={`mb-6 p-4 rounded-xl text-xs font-mono border opacity-0 ${message.type === 'success' ? 'bg-stone-50 text-stone-700 border-stone-200' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                                <div className={`mb-6 p-4 rounded-xl text-xs font-mono border opacity-0 ${message.type === 'success' ? 'bg-stone-50 dark:bg-stone-850 text-stone-700 dark:text-stone-200 border-stone-200 dark:border-stone-700' : 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-100 dark:border-red-900/50'}`}>
                                     {message.text}
                                 </div>
                             )}
@@ -322,7 +316,7 @@ const Profile = () => {
                             <form onSubmit={handleUpdateProfile} className="space-y-6 opacity-0">
                                 <div>
                                     <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3">Overview</h3>
-                                    <label className="block text-xs font-bold text-stone-600 mb-2">Display Name</label>
+                                    <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-2">Display Name</label>
                                     <input
                                         type="text"
                                         value={displayName}
@@ -332,21 +326,21 @@ const Profile = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-stone-600 mb-2">Email Address (Read-only)</label>
+                                    <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-2">Email Address (Read-only)</label>
                                     <input
                                         type="email"
                                         value={currentUser.email}
                                         readOnly
                                         disabled
-                                        className="input-field bg-stone-100/50 text-stone-400 cursor-not-allowed"
+                                        className="input-field bg-stone-100/50 dark:bg-stone-900/50 text-stone-400 dark:text-stone-500 cursor-not-allowed"
                                     />
                                 </div>
                                 
-                                <hr className="border-stone-150 my-6" />
-
+                                <hr className="border-stone-150 dark:border-stone-800 my-6" />
+ 
                                 <div>
                                     <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-3">Preferences</h3>
-                                    <label className="block text-xs font-bold text-stone-600 mb-2">New Password (leave blank to keep current)</label>
+                                    <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-2">New Password (leave blank to keep current)</label>
                                     <input
                                         type="password"
                                         value={newPassword}
@@ -361,16 +355,16 @@ const Profile = () => {
                                 </button>
                             </form>
  
-                            <hr className="my-8 border-stone-200 opacity-0" />
+                            <hr className="my-8 border-stone-200 dark:border-stone-800 opacity-0" />
  
                             <div className="opacity-0">
                                 <h3 className="text-red-600 font-bold text-xs uppercase tracking-wider mb-2 flex items-center gap-2">
                                     <AlertTriangle size={14} /> Danger Zone
                                 </h3>
-                                <p className="text-xs text-stone-500 mb-4">Once you delete your account, there is no going back. All stored layouts will be deleted permanently.</p>
+                                <p className="text-xs text-stone-500 dark:text-stone-400 mb-4">Once you delete your account, there is no going back. All stored layouts will be deleted permanently.</p>
                                 <button
                                     onClick={(e) => { e.preventDefault(); setShowDeleteModal(true); }}
-                                    className="btn-secondary border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50/50"
+                                    className="btn-secondary border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50/50 dark:hover:bg-red-950/30"
                                 >
                                     Delete Account
                                 </button>
@@ -385,14 +379,14 @@ const Profile = () => {
                 {showDeleteModal && (
                     <motion.div
                          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                         className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+                         className="fixed inset-0 bg-black/40 dark:bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
                     >
                          <motion.div
                              initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-                             className="glass-card max-w-md w-full shadow-2xl border border-stone-200"
+                             className="glass-card max-w-md w-full shadow-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900"
                          >
-                             <h3 className="text-lg font-light text-charcoal mb-3">Delete Account?</h3>
-                             <p className="text-xs text-stone-500 mb-6">Are you sure you want to permanently delete your account? This action cannot be undone.</p>
+                             <h3 className="text-lg font-light text-charcoal dark:text-stone-100 mb-3">Delete Account?</h3>
+                             <p className="text-xs text-stone-500 dark:text-stone-400 mb-6">Are you sure you want to permanently delete your account? This action cannot be undone.</p>
                              <div className="flex gap-4 justify-end">
                                  <button className="btn-secondary" onClick={() => setShowDeleteModal(false)}>Cancel</button>
                                  <button className="btn-primary bg-red-600 hover:bg-red-700 border-red-600" onClick={handleDeleteAccount}>Yes, Delete Account</button>
@@ -407,11 +401,11 @@ const Profile = () => {
  
  const StatCard = ({ icon, label, value }) => (
      <div className="metric-card opacity-0">
-         <div className="p-3 bg-stone-50/50 text-stone-900 border border-stone-200/60 rounded-2xl mb-3 shadow-sm flex items-center justify-center">
+         <div className="p-3 bg-stone-50/50 dark:bg-stone-850/50 text-stone-900 dark:text-stone-100 border border-stone-200/60 dark:border-stone-800 rounded-2xl mb-3 shadow-sm flex items-center justify-center">
              {React.cloneElement(icon, { size: 22 })}
          </div>
-         <div className="text-3xl font-light text-stone-900 font-mono tracking-tight mb-1">{value}</div>
-         <div className="text-[10px] text-stone-400 uppercase tracking-wider font-bold">{label}</div>
+         <div className="text-3xl font-light text-stone-900 dark:text-stone-100 font-mono tracking-tight mb-1">{value}</div>
+         <div className="text-[10px] text-stone-400 dark:text-stone-500 uppercase tracking-wider font-bold">{label}</div>
      </div>
  );
 

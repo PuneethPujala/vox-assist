@@ -4,9 +4,9 @@ import { OrbitControls, Center, Grid, Html, GizmoHelper } from '@react-three/dre
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
-import { Loader2, Send, Download, Plus, Trash2, ArrowRight, ArrowLeft, CheckCircle2, Printer, Box, Link2, Mic, MicOff, Loader } from 'lucide-react';
+import { useTheme } from '../components/ThemeProvider';
+import api, { API_BASE_URL } from '../lib/api';
+import { Loader2, Send, Plus, Trash2, ArrowRight, ArrowLeft, Printer, Box, Link2, Mic, MicOff, Loader } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import gsap from 'gsap';
@@ -48,7 +48,7 @@ const ROOM_OPTION_GROUPS = [
 // Flat list — used for simple value→label lookups
 const ROOM_OPTIONS = ROOM_OPTION_GROUPS.flatMap(g => g.options);
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = API_BASE_URL;
 
 function convertPromptUnits(text, fromUnit, toUnit) {
     if (!text || fromUnit === toUnit) return text;
@@ -214,13 +214,13 @@ const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSp
             <meshBasicMaterial transparent opacity={0.0} depthTest={false} />
             {isHovered && roomSpec && dims && (
                 <Html position={hoverPoint ? [hoverPoint.x, hoverPoint.y, 3] : [cx, cy, 3]} center style={{ pointerEvents: 'none', zIndex: 100 }}>
-                    <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-xl border border-stone-200 text-xs text-stone-700 font-mono w-max -translate-y-16">
-                        <p className="font-bold text-charcoal mb-1 flex items-center gap-2">
+                    <div className="bg-white/95 dark:bg-stone-900/95 backdrop-blur-sm p-3 rounded-lg shadow-xl border border-stone-200 dark:border-stone-700 text-xs text-stone-700 dark:text-stone-300 font-mono w-max -translate-y-16">
+                        <p className="font-bold text-charcoal dark:text-stone-100 mb-1 flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: roomSpec.color || '#e5e7eb' }}></span>
                             <span className="capitalize">{roomSpec.type}</span>
                         </p>
                         <p>{Math.round(roomSpec.area)} sq{unit} <span className="text-stone-400">({unit === 'ft' ? Math.round(roomSpec.area / 10.7639) + ' sqm' : Math.round(roomSpec.area * 10.7639) + ' sqft'})</span></p>
-                        <p className="text-[10px] text-stone-500 mt-1 border-t border-stone-100 pt-1">
+                        <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-1 border-t border-stone-100 dark:border-stone-800 pt-1">
                             {unit === 'ft' ? `${dims.ft.w} × ${dims.ft.h} ft (${dims.m.w} × ${dims.m.h} m)` : `${dims.m.w} × ${dims.m.h} m (${dims.ft.w} × ${dims.ft.h} ft)`}
                         </p>
                     </div>
@@ -231,7 +231,8 @@ const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSp
 };
 
 const Create = () => {
-    const { currentUser } = useAuth();
+    const { theme } = useTheme();
+    const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     // Wizard State
     const [step, setStep] = useState(1); // 1: Rooms, 2: Style, 3: Review, 4: Generating, 5: Results
@@ -259,7 +260,7 @@ const Create = () => {
     const audioChunksRef = useRef([]);
 
     // Generation State
-    const [loading, setLoading] = useState(false);
+    const [_loading, setLoading] = useState(false);
     const [generationStatus, setGenerationStatus] = useState(''); // Simulated SSE
     const [modelUrl, setModelUrl] = useState(null);
     const [layoutSpec, setLayoutSpec] = useState(null);
@@ -313,9 +314,8 @@ const Create = () => {
                 color: r.color
             }));
 
-            const token = await currentUser?.getIdToken();
-            const res = await axios.post(
-                `${API_URL}/api/v1/blueprint`,
+            const res = await api.post(
+                '/api/v1/blueprint',
                 {
                     layout_data: fullLayoutRef.current,
                     screenshot_base64: screenshot,
@@ -324,7 +324,6 @@ const Create = () => {
                     prompt: compiledPrompt
                 },
                 {
-                    headers: { Authorization: `Bearer ${token}` },
                     responseType: 'blob'
                 }
             );
@@ -466,17 +465,15 @@ const Create = () => {
                 setIsTranscribing(true);
 
                 try {
-                    const token = await currentUser?.getIdToken();
                     const formData = new FormData();
                     formData.append('audio', audioBlob, 'recording.webm');
 
                     console.log("[VOICE] 📡 Sending request to /api/v1/voice-transcribe...");
-                    const response = await axios.post(
-                        `${API_URL}/api/v1/voice-transcribe`,
+                    const response = await api.post(
+                        '/api/v1/voice-transcribe',
                         formData,
                         {
                             headers: {
-                                Authorization: `Bearer ${token}`,
                                 'Content-Type': 'multipart/form-data'
                             }
                         }
@@ -634,8 +631,6 @@ const Create = () => {
         }, 3000);
 
         try {
-            const token = await currentUser.getIdToken();
-            
             // Prepare payload
             const payload = { 
                 prompt: compiledPrompt, 
@@ -668,11 +663,7 @@ const Create = () => {
                 });
             }
             
-            const response = await axios.post(
-                `${API_URL}/api/v1/generate`,
-                payload,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const response = await api.post('/api/v1/generate', payload);
 
             if (response.data.success) {
                 const jobId = response.data.job_id;
@@ -680,9 +671,7 @@ const Create = () => {
                 // Poll for completion
                 const pollInterval = setInterval(async () => {
                     try {
-                        const jobRes = await axios.get(`${API_URL}/api/v1/jobs/${jobId}`, {
-                            headers: { Authorization: `Bearer ${token}` }
-                        });
+                        const jobRes = await api.get(`/api/v1/jobs/${jobId}`);
 
                         if (jobRes.data.status === 'completed') {
                             clearInterval(pollInterval);
@@ -737,7 +726,7 @@ const Create = () => {
     const hoveredColor = hoveredRoomId && layoutSpec ? layoutSpec.rooms.find(r => r.id === hoveredRoomId)?.color : null;
 
     return (
-        <div className="pt-24 px-6 md:px-8 pb-10 min-h-screen flex flex-col md:flex-row gap-8 bg-cream overflow-hidden md:h-[calc(100vh-10px)]">
+        <div className="pt-24 px-6 md:px-8 pb-10 min-h-screen flex flex-col md:flex-row gap-8 bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 overflow-hidden md:h-[calc(100vh-10px)] transition-colors duration-200">
             {/* Left Panel: Wizard Input & Stats */}
             <motion.div
                 initial={{ x: -20, opacity: 0 }}
@@ -747,11 +736,11 @@ const Create = () => {
                 {step < 3 && (
                     <div className="mb-8">
                         <div className="flex items-center justify-between mb-2">
-                            <h1 className="text-xl font-light text-charcoal">Design Wizard</h1>
+                            <h1 className="text-xl font-light text-charcoal dark:text-stone-100">Design Wizard</h1>
                             <span className="text-[10px] font-mono font-bold text-stone-400">Step {step} of 2</span>
                         </div>
-                        <div className="h-1.5 w-full bg-stone-100 rounded-full overflow-hidden">
-                            <motion.div className="h-full bg-charcoal" initial={{ width: 0 }} animate={{ width: `${(step / 2) * 100}%` }} transition={{ duration: 0.35, ease: 'easeOut' }} />
+                        <div className="h-1.5 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+                            <motion.div className="h-full bg-stone-900 dark:bg-stone-100" initial={{ width: 0 }} animate={{ width: `${(step / 2) * 100}%` }} transition={{ duration: 0.35, ease: 'easeOut' }} />
                         </div>
                     </div>
                 )}
@@ -762,16 +751,16 @@ const Create = () => {
                         <motion.div key="step1" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="flex-1">
                             <h2 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4">1. Room Requirements</h2>
 
-                            <div className="flex bg-stone-100 p-1 rounded-xl mb-6">
+                            <div className="flex bg-stone-100 dark:bg-stone-800 p-1 rounded-xl mb-6">
                                 <button
                                     onClick={() => setInputMode('manual')}
-                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${inputMode === 'manual' ? 'bg-white shadow border border-stone-200 text-charcoal' : 'text-stone-400 hover:text-stone-700'}`}
+                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${inputMode === 'manual' ? 'bg-white dark:bg-stone-900 shadow border border-stone-200 dark:border-stone-700 text-charcoal dark:text-stone-100' : 'text-stone-400 hover:text-stone-700 dark:hover:text-stone-200'}`}
                                 >
                                     Room Builder
                                 </button>
                                 <button
                                     onClick={() => setInputMode('text')}
-                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${inputMode === 'text' ? 'bg-white shadow border border-stone-200 text-charcoal' : 'text-stone-400 hover:text-stone-700'}`}
+                                    className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${inputMode === 'text' ? 'bg-white dark:bg-stone-900 shadow border border-stone-200 dark:border-stone-700 text-charcoal dark:text-stone-100' : 'text-stone-400 hover:text-stone-700 dark:hover:text-stone-200'}`}
                                 >
                                     Text Prompt
                                 </button>
@@ -779,12 +768,12 @@ const Create = () => {
 
                             {inputMode === 'manual' ? (
                                 <>
-                                    <div className="mb-6 bg-stone-50/50 p-4 rounded-2xl border border-stone-200/60">
+                                    <div className="mb-6 bg-stone-50/50 dark:bg-stone-900/50 p-4 rounded-2xl border border-stone-200/60 dark:border-stone-800">
                                         <div className="flex justify-between items-center mb-2">
-                                            <label className="block text-xs font-bold text-stone-600">Target Total Area (sq{unit})</label>
+                                            <label className="block text-xs font-bold text-stone-600 dark:text-stone-300">Target Total Area (sq{unit})</label>
                                             <button
                                                 onClick={handleUnitToggle}
-                                                className="text-[9px] font-mono bg-stone-200/50 hover:bg-stone-200 text-stone-500 hover:text-charcoal px-2.5 py-0.5 rounded-lg border border-stone-300/40"
+                                                className="text-[9px] font-mono bg-stone-200/50 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-500 dark:text-stone-400 hover:text-charcoal dark:hover:text-stone-100 px-2.5 py-0.5 rounded-lg border border-stone-300/40 dark:border-stone-700"
                                             >
                                                 {unit === 'ft' ? 'Switch to Meters' : 'Switch to Feet'}
                                             </button>
@@ -797,12 +786,12 @@ const Create = () => {
                                         />
                                     </div>
 
-                                    <div className="mb-6 h-56 bg-stone-50/40 rounded-2xl border border-stone-200/65 p-4 flex flex-col relative w-full items-center justify-center shadow-inner">
+                                    <div className="mb-6 h-56 bg-stone-50/40 dark:bg-stone-900/40 rounded-2xl border border-stone-200/65 dark:border-stone-800 p-4 flex flex-col relative w-full items-center justify-center shadow-inner">
                                         <div className="absolute top-2.5 left-3.5 text-[9px] font-bold text-stone-400 tracking-widest z-10 font-mono">AREA DISTRIBUTION</div>
                                         {/* Center Label (Placed before chart to fix z-index tooltip overlap) */}
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4 z-0">
                                             <span className="text-stone-400 text-[10px] font-bold">TOTAL</span>
-                                            <span className="text-stone-700 text-sm font-bold font-mono">{totalAreaConstraint}</span>
+                                            <span className="text-stone-700 dark:text-stone-200 text-sm font-bold font-mono">{totalAreaConstraint}</span>
                                         </div>
                                         <div className="w-full h-full pt-4 relative z-10">
                                             <ResponsiveContainer width="100%" height="100%">
@@ -834,7 +823,7 @@ const Create = () => {
                                                 <select
                                                     value={room.type}
                                                     onChange={(e) => handleRoomChange(room.id, 'type', e.target.value)}
-                                                    className="flex-1 p-2 bg-stone-50/50 hover:bg-stone-50/85 border border-stone-200 rounded-xl outline-none text-xs"
+                                                    className="flex-1 p-2 bg-stone-50/50 dark:bg-stone-900/80 hover:bg-stone-50/85 dark:hover:bg-stone-850 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 rounded-xl outline-none text-xs"
                                                 >
                                                     {ROOM_OPTION_GROUPS.map(group => (
                                                         <optgroup key={group.label} label={group.label}>
@@ -848,22 +837,22 @@ const Create = () => {
                                                     type="number"
                                                     value={room.area}
                                                     onChange={(e) => handleRoomChange(room.id, 'area', Number(e.target.value))}
-                                                    className="w-24 p-2 bg-stone-50/50 border border-stone-200 rounded-xl outline-none text-xs text-center font-mono"
+                                                    className="w-24 p-2 bg-stone-50/50 dark:bg-stone-900/80 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 rounded-xl outline-none text-xs text-center font-mono placeholder:text-stone-400"
                                                     placeholder={`sq${unit}`}
                                                 />
-                                                <button onClick={() => handleRemoveRoom(room.id)} className="icon-btn hover:text-red-600 hover:bg-red-50/50 p-2">
+                                                <button onClick={() => handleRemoveRoom(room.id)} className="icon-btn hover:text-red-600 hover:bg-red-50/50 dark:hover:bg-red-950/40 p-2">
                                                     <Trash2 size={13} />
                                                 </button>
                                             </div>
                                         ))}
-                                        <button onClick={handleAddRoom} className="w-full py-2.5 border-2 border-dashed border-stone-200 hover:border-stone-400 text-stone-500 hover:text-stone-700 rounded-xl text-xs flex items-center justify-center gap-1 font-mono transition-all">
+                                        <button onClick={handleAddRoom} className="w-full py-2.5 border-2 border-dashed border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500 text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-xl text-xs flex items-center justify-center gap-1 font-mono transition-all">
                                             <Plus size={14} /> Add Room
                                         </button>
                                     </div>
-                                    <div className="mb-6 pt-4 border-t border-stone-100">
+                                    <div className="mb-6 pt-4 border-t border-stone-100 dark:border-stone-800">
                                         <div className="flex justify-between items-center mb-2">
                                             <div>
-                                                <label className="block text-xs font-bold text-stone-600 uppercase tracking-wider">Adjacency Constraints</label>
+                                                <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 uppercase tracking-wider">Adjacency Constraints</label>
                                                 <p className="text-[10px] text-stone-400 mt-0.5">Prefer these rooms to share a wall</p>
                                             </div>
                                             <button
@@ -888,11 +877,11 @@ const Create = () => {
 
                                         <div className="space-y-2">
                                             {adjacencyPairs.map((pair) => (
-                                                <div key={pair.id} className="flex gap-2 items-center bg-stone-50 p-2 rounded-lg border border-stone-100">
+                                                <div key={pair.id} className="flex gap-2 items-center bg-stone-50 dark:bg-stone-850 p-2 rounded-lg border border-stone-100 dark:border-stone-700">
                                                     <select
                                                         value={pair.roomA}
                                                         onChange={(e) => handleUpdateAdjacency(pair.id, 'roomA', e.target.value)}
-                                                        className="flex-1 p-1.5 bg-stone-50/50 border border-stone-200 rounded-xl text-xs outline-none"
+                                                        className="flex-1 p-1.5 bg-stone-50/50 dark:bg-stone-900/80 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 rounded-xl text-xs outline-none"
                                                     >
                                                         {roomInstances.map(inst => (
                                                             <option key={inst.key} value={inst.key}>{inst.label}</option>
@@ -900,13 +889,13 @@ const Create = () => {
                                                     </select>
 
                                                     <div className="flex items-center gap-0.5 text-[10px] text-stone-400 font-bold">
-                                                        <Link2 size={12} className="text-charcoal/40" />
+                                                        <Link2 size={12} className="text-charcoal/40 dark:text-stone-400" />
                                                     </div>
 
                                                     <select
                                                         value={pair.roomB}
                                                         onChange={(e) => handleUpdateAdjacency(pair.id, 'roomB', e.target.value)}
-                                                        className="flex-1 p-1.5 bg-stone-50/50 border border-stone-200 rounded-xl text-xs outline-none"
+                                                        className="flex-1 p-1.5 bg-stone-50/50 dark:bg-stone-900/80 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 rounded-xl text-xs outline-none"
                                                     >
                                                         {roomInstances
                                                             .filter(inst => inst.key !== pair.roomA)
@@ -918,7 +907,7 @@ const Create = () => {
 
                                                     <button
                                                         onClick={() => handleRemoveAdjacency(pair.id)}
-                                                        className="icon-btn p-1.5 hover:text-red-500 hover:bg-red-50/50"
+                                                        className="icon-btn p-1.5 hover:text-red-500 hover:bg-red-50/50 dark:hover:bg-red-950/40"
                                                     >
                                                         <Trash2 size={12} />
                                                     </button>
@@ -930,10 +919,10 @@ const Create = () => {
                             ) : (
                                 <div className="mb-6">
                                     <div className="flex justify-between items-end mb-2">
-                                        <p className="text-[11px] text-stone-500 font-sans">Describe the rooms and dimensions you want conversationally.</p>
+                                        <p className="text-[11px] text-stone-500 dark:text-stone-400 font-sans">Describe the rooms and dimensions you want conversationally.</p>
                                         <button
                                             onClick={handleUnitToggle}
-                                            className="text-[9px] font-mono bg-stone-200/50 hover:bg-stone-200 text-stone-500 hover:text-charcoal px-2.5 py-0.5 rounded-lg border border-stone-300/40 whitespace-nowrap"
+                                            className="text-[9px] font-mono bg-stone-200/50 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-500 dark:text-stone-400 hover:text-charcoal dark:hover:text-stone-100 px-2.5 py-0.5 rounded-lg border border-stone-300/40 dark:border-stone-700 whitespace-nowrap"
                                         >
                                             {unit === 'ft' ? 'Switch to Meters' : 'Switch to Feet'}
                                         </button>
@@ -942,7 +931,7 @@ const Create = () => {
                                         value={textPrompt}
                                         onChange={(e) => setTextPrompt(e.target.value)}
                                         placeholder={`E.g., I want a 1000 sq${unit} house with a 300 sq${unit} living room, a 150 sq${unit} bedroom...`}
-                                        className="w-full p-4 rounded-2xl border border-stone-200 focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none resize-none h-36 text-stone-700 bg-stone-50/50 text-xs font-sans"
+                                        className="w-full p-4 rounded-2xl border border-stone-200 dark:border-stone-700 focus:border-stone-900 dark:focus:border-stone-400 focus:ring-1 focus:ring-stone-900 dark:focus:ring-stone-400 outline-none resize-none h-36 text-stone-700 dark:text-stone-200 bg-stone-50/50 dark:bg-stone-900/50 placeholder:text-stone-400 dark:placeholder:text-stone-500 text-xs font-sans"
                                     />
 
                                     {/* Voice Button */}
@@ -955,16 +944,16 @@ const Create = () => {
                                                 ${isRecording
                                                     ? 'bg-red-500 hover:bg-red-600 animate-pulse'
                                                     : isTranscribing
-                                                        ? 'bg-stone-300 cursor-not-allowed'
-                                                        : 'bg-charcoal hover:bg-stone-850'
+                                                        ? 'bg-stone-300 dark:bg-stone-700 cursor-not-allowed'
+                                                        : 'bg-stone-900 dark:bg-stone-100 hover:bg-stone-850 dark:hover:bg-white text-stone-50 dark:text-stone-900'
                                                 }
                                            `}
                                         >
                                             {isTranscribing
-                                                ? <Loader size={20} className="text-white animate-spin" />
+                                                ? <Loader size={20} className="text-white dark:text-stone-900 animate-spin" />
                                                 : isRecording
-                                                    ? <MicOff size={20} className="text-white" />
-                                                    : <Mic size={20} className="text-white" />
+                                                    ? <MicOff size={20} className="text-white dark:text-stone-900" />
+                                                    : <Mic size={20} className="text-white dark:text-stone-900" />
                                             }
                                         </button>
                                         <p className="text-[10px] text-stone-400 mt-2 font-mono">
@@ -982,12 +971,12 @@ const Create = () => {
                                         )}
                                     </div>
 
-                                    <p className="text-[10px] text-stone-450 mt-3 italic font-sans">Tip: you can type adjacency hints like "Bedroom adjacent to Study".</p>
+                                    <p className="text-[10px] text-stone-450 dark:text-stone-500 mt-3 italic font-sans">Tip: you can type adjacency hints like "Bedroom adjacent to Study".</p>
                                 </div>
                             )}
 
                             {validationError && (
-                                <div className="p-3 bg-red-50 text-red-600 text-xs rounded-xl mb-6 border border-red-100 flex items-start gap-2 font-mono">
+                                <div className="p-3 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs rounded-xl mb-6 border border-red-100 dark:border-red-900/50 flex items-start gap-2 font-mono">
                                     <span className="mt-0.5">⚠️</span> {validationError}
                                 </div>
                             )}
@@ -1005,13 +994,13 @@ const Create = () => {
                         <motion.div key="step2" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="flex-1 flex flex-col">
                             <h2 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4">2. Review Details</h2>
 
-                            <div className="flex-1 bg-stone-50/50 rounded-2xl p-5 border border-stone-200/60 mb-6 font-mono text-xs text-stone-600 leading-relaxed overflow-y-auto">
+                            <div className="flex-1 bg-stone-50/50 dark:bg-stone-900/40 rounded-2xl p-5 border border-stone-200/60 dark:border-stone-800 mb-6 font-mono text-xs text-stone-600 dark:text-stone-300 leading-relaxed overflow-y-auto">
                                 <div className="mb-4">
-                                    <span className="font-bold text-stone-850">Prompt sent to AI:</span><br />
+                                    <span className="font-bold text-stone-850 dark:text-stone-100">Prompt sent to AI:</span><br />
                                     {compiledPrompt}
                                 </div>
                                 <div>
-                                    <span className="font-bold text-stone-850">Metrics:</span><br />
+                                    <span className="font-bold text-stone-850 dark:text-stone-100">Metrics:</span><br />
                                     {inputMode === 'manual' ? (
                                         <>
                                             - Total Target Area: {totalAreaConstraint} sq{unit}<br />
@@ -1024,7 +1013,7 @@ const Create = () => {
                             </div>
 
                             {error && (
-                                <div className="p-3 bg-red-50 text-red-600 text-xs rounded-xl mb-6 border border-red-100 font-mono">
+                                <div className="p-3 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs rounded-xl mb-6 border border-red-100 dark:border-red-900/50 font-mono">
                                     {error}
                                 </div>
                             )}
@@ -1043,9 +1032,9 @@ const Create = () => {
                     {/* STEP 3: Generating Overlay UI on left side */}
                     {step === 3 && (
                         <motion.div key="step3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center justify-center text-center">
-                            <Loader2 className="w-12 h-12 animate-spin text-charcoal mb-6" />
-                            <h2 className="text-xl font-light text-charcoal mb-2">Architecting Solutions</h2>
-                            <p className="text-stone-500 font-mono text-[10px] bg-stone-100 border border-stone-200/50 px-4 py-2 rounded-full shadow-sm">{generationStatus || "Initializing..."}</p>
+                            <Loader2 className="w-12 h-12 animate-spin text-charcoal dark:text-stone-100 mb-6" />
+                            <h2 className="text-xl font-light text-charcoal dark:text-stone-100 mb-2">Architecting Solutions</h2>
+                            <p className="text-stone-500 dark:text-stone-400 font-mono text-[10px] bg-stone-100 dark:bg-stone-850 border border-stone-200/50 dark:border-stone-700 px-4 py-2 rounded-full shadow-sm">{generationStatus || "Initializing..."}</p>
                         </motion.div>
                     )}
 
@@ -1053,8 +1042,8 @@ const Create = () => {
                     {step === 4 && layoutSpec && stats && (
                         <motion.div key="step4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full pl-1">
                             <div className="flex justify-between items-center mb-6">
-                                <h1 className="text-xl font-light text-charcoal">Design Candidates</h1>
-                                <button onClick={resetWizard} className="text-[10px] font-mono font-bold text-stone-400 hover:text-charcoal hover:underline">New Project</button>
+                                <h1 className="text-xl font-light text-charcoal dark:text-stone-100">Design Candidates</h1>
+                                <button onClick={resetWizard} className="text-[10px] font-mono font-bold text-stone-400 hover:text-charcoal dark:hover:text-stone-200 hover:underline">New Project</button>
                             </div>
 
                             {/* Candidate Gallery */}
@@ -1063,12 +1052,12 @@ const Create = () => {
                                     <div
                                         key={c.id}
                                         onClick={() => handleSelectCandidate(c)}
-                                        className={`relative rounded-2xl overflow-hidden border cursor-pointer transition-all duration-200 bg-stone-50/50 ${selectedCandidateId === c.id ? 'border-charcoal ring-4 ring-charcoal/10 shadow-md' : 'border-stone-200/60 hover:border-stone-400'}`}
+                                        className={`relative rounded-2xl overflow-hidden border cursor-pointer transition-all duration-200 bg-stone-50/50 dark:bg-stone-900/50 ${selectedCandidateId === c.id ? 'border-charcoal dark:border-stone-200 ring-4 ring-charcoal/10 dark:ring-stone-400/20 shadow-md' : 'border-stone-200/60 dark:border-stone-800 hover:border-stone-400 dark:hover:border-stone-600'}`}
                                     >
                                         <div className="h-20 flex items-center justify-center">
                                             <span className="text-[10px] font-bold text-stone-400 uppercase font-mono">Option {c.id + 1}</span>
                                         </div>
-                                        <div className={`absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-bold font-mono ${selectedCandidateId === c.id ? 'bg-charcoal text-white' : 'bg-stone-200/55 text-stone-600'}`}>
+                                        <div className={`absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-bold font-mono ${selectedCandidateId === c.id ? 'bg-charcoal dark:bg-stone-100 text-white dark:text-stone-900' : 'bg-stone-200/55 dark:bg-stone-800 text-stone-600 dark:text-stone-400'}` }>
                                             Score: {Math.round(c.score)}
                                         </div>
                                     </div>
@@ -1089,10 +1078,10 @@ const Create = () => {
                                     ].map((stat, i) => (
                                         <div key={i}>
                                             <div className="flex justify-between text-[10px] font-mono mb-1">
-                                                <span className="text-stone-600 font-bold uppercase tracking-wider">{stat.label}</span>
-                                                <span className="text-stone-450">{stat.val}%</span>
+                                                <span className="text-stone-600 dark:text-stone-300 font-bold uppercase tracking-wider">{stat.label}</span>
+                                                <span className="text-stone-450 dark:text-stone-500">{stat.val}%</span>
                                             </div>
-                                            <div className="h-1.5 w-full bg-stone-100 rounded-full overflow-hidden">
+                                            <div className="h-1.5 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
                                                 <div className="h-full rounded-full" style={{ width: `${stat.val}%`, backgroundColor: stat.color }} />
                                             </div>
                                         </div>
@@ -1100,12 +1089,12 @@ const Create = () => {
                                 </div>
 
                                 {/* Generated Area Distribution Pie */}
-                                <div className="mb-6 h-56 bg-white/80 rounded-3xl border border-stone-200/60 p-4 flex flex-col relative w-full items-center justify-center shadow-inner">
+                                <div className="mb-6 h-56 bg-white/80 dark:bg-stone-900/80 rounded-3xl border border-stone-200/60 dark:border-stone-800 p-4 flex flex-col relative w-full items-center justify-center shadow-inner">
                                     <div className="absolute top-2.5 left-3.5 text-[9px] font-bold text-stone-400 tracking-widest z-10 font-mono">GENERATED AREAS</div>
                                     {/* Center Label Placed First */}
                                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4 z-0">
                                         <span className="text-stone-400 text-[10px] font-bold">BUILT</span>
-                                        <span className="text-stone-700 text-sm font-bold font-mono">{Math.round(layoutSpec.rooms.reduce((acc, r) => acc + r.area, 0))}</span>
+                                        <span className="text-stone-700 dark:text-stone-200 text-sm font-bold font-mono">{Math.round(layoutSpec.rooms.reduce((acc, r) => acc + r.area, 0))}</span>
                                     </div>
                                     <div className="w-full h-full pt-4 relative z-10">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -1134,20 +1123,20 @@ const Create = () => {
                                 </div>
 
                                 {/* Room Legend */}
-                                <div className="pt-4 border-t border-stone-100">
+                                <div className="pt-4 border-t border-stone-100 dark:border-stone-800">
                                     <div className="grid grid-cols-2 gap-2">
                                         {layoutSpec.rooms.map((room, idx) => (
                                             <div
                                                 key={idx}
-                                                className={`flex items-center justify-between p-2 rounded-xl text-xs cursor-pointer ${hoveredRoomId === room.id ? 'bg-stone-100 ring-1 ring-stone-200' : 'hover:bg-stone-50'}`}
+                                                className={`flex items-center justify-between p-2 rounded-xl text-xs cursor-pointer ${hoveredRoomId === room.id ? 'bg-stone-100 dark:bg-stone-800 ring-1 ring-stone-200 dark:ring-stone-700' : 'hover:bg-stone-50 dark:hover:bg-stone-850'}`}
                                                 onMouseEnter={() => setHoveredRoomId(room.id)}
                                                 onMouseLeave={() => setHoveredRoomId(null)}
                                             >
                                                 <div className="flex items-center gap-2">
                                                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: room.color || '#e5e7eb' }} />
-                                                    <span className="text-stone-600 truncate w-20 capitalize font-medium" title={room.type}>{room.type}</span>
+                                                    <span className="text-stone-600 dark:text-stone-300 truncate w-20 capitalize font-medium" title={room.type}>{room.type}</span>
                                                 </div>
-                                                <span className="font-mono text-stone-400 text-[10px]">
+                                                <span className="font-mono text-stone-400 dark:text-stone-500 text-[10px]">
                                                     {room.requested_area_sqft ? `${room.requested_area_sqft} → ${Math.round(room.area)}` : Math.round(room.area)}
                                                 </span>
                                             </div>
@@ -1157,13 +1146,13 @@ const Create = () => {
                                 <div className="mt-6 flex flex-col gap-2">
                                     <button
                                         onClick={handleDownloadBlueprint}
-                                        className="btn-secondary w-full border-blue-200 text-blue-800 hover:bg-blue-50/50 hover:text-blue-900 bg-white/80"
+                                        className="btn-secondary w-full border-blue-200 dark:border-blue-900/50 text-blue-800 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/40 hover:text-blue-900 dark:hover:text-blue-300 bg-white/80 dark:bg-stone-900/80"
                                     >
                                         <Printer size={14} /> Download 2D Blueprint (.PDF)
                                     </button>
                                     <button
                                         onClick={handleExportSTL}
-                                        className="btn-secondary w-full border-amber-200 text-amber-800 hover:bg-amber-50/50 hover:text-amber-900 bg-white/80"
+                                        className="btn-secondary w-full border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-950/40 hover:text-amber-900 dark:hover:text-amber-300 bg-white/80 dark:bg-stone-900/80"
                                     >
                                         <Box size={14} /> Download 3D Print (.STL)
                                     </button>
@@ -1175,13 +1164,13 @@ const Create = () => {
             </motion.div>
 
             {/* Right Panel: 3D Visualization */}
-            <div className="w-full md:w-2/3 h-[50vh] md:h-[calc(100vh-120px)] bg-stone-50 border border-stone-200/60 rounded-3xl relative overflow-hidden shadow-inner">
+            <div className="w-full md:w-2/3 h-[50vh] md:h-[calc(100vh-120px)] bg-stone-50 dark:bg-stone-950 border border-stone-200/60 dark:border-stone-800 rounded-3xl relative overflow-hidden shadow-inner">
                 {step === 3 && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-stone-50 z-20">
+                    <div className="absolute inset-0 flex items-center justify-center bg-stone-50 dark:bg-stone-950 z-20">
                         {/* Empty placeholder during generation to look cool */}
-                        <div className="w-full h-full relative overflow-hidden bg-stone-50">
-                            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] flex items-center justify-center">
-                                <motion.div initial={{ scale: 0.8, opacity: 0, rotate: 0 }} animate={{ scale: 1, opacity: 1, rotate: 180 }} transition={{ repeat: Infinity, duration: 2, repeatType: "reverse" }} className="w-32 h-32 border-2 border-charcoal/20 border-dashed rounded-full" />
+                        <div className="w-full h-full relative overflow-hidden bg-stone-50 dark:bg-stone-950">
+                            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] flex items-center justify-center">
+                                <motion.div initial={{ scale: 0.8, opacity: 0, rotate: 0 }} animate={{ scale: 1, opacity: 1, rotate: 180 }} transition={{ repeat: Infinity, duration: 2, repeatType: "reverse" }} className="w-32 h-32 border-2 border-charcoal/20 dark:border-stone-500/20 border-dashed rounded-full" />
                             </div>
                         </div>
                     </div>
@@ -1189,8 +1178,8 @@ const Create = () => {
 
                 <Canvas camera={{ position: [20, 30, 20], fov: 45, far: 10000 }} gl={{ preserveDrawingBuffer: true }}>
                     <SceneExporter sceneRef={sceneRef} glRef={glRef} />
-                    <fog attach="fog" args={['#f5f5f4', 50, 10000]} />
-                    <ambientLight intensity={0.5} />
+                    <fog attach="fog" args={[isDark ? '#0c0a09' : '#f5f5f4', 50, 10000]} />
+                    <ambientLight intensity={isDark ? 0.8 : 0.5} />
                     <directionalLight position={[10, 20, 10]} intensity={1.5} />
                     <Suspense fallback={null}>
                         <Center>
@@ -1208,7 +1197,7 @@ const Create = () => {
                                 />
                             ))}
                             {hoveredPoly && <RoomHighlight roomPoly={hoveredPoly} color={hoveredColor} />}
-                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={gridSize * 5} sectionThickness={1.5} cellThickness={0.5} cellSize={gridSize} sectionColor="#e5e7eb" fadeDistance={30} />
+                            <Grid position={[0, -0.01, 0]} rotation={[Math.PI / 2, 0, 0]} args={[50, 50]} sectionSize={gridSize * 5} sectionThickness={1.5} cellThickness={0.5} cellSize={gridSize} sectionColor={isDark ? '#292524' : '#e5e7eb'} cellColor={isDark ? '#1c1917' : '#f3f4f6'} fadeDistance={30} />
                         </Center>
                     </Suspense>
                     <OrbitControls makeDefault />
@@ -1220,12 +1209,12 @@ const Create = () => {
                 {/* Overlays */}
                 <div className="absolute top-6 right-6 pointer-events-none flex flex-col items-end gap-3">
                     {/* Grid Scale Slider */}
-                    <div className="bg-white/95 backdrop-blur rounded-2xl shadow-md border border-stone-200/60 flex flex-col pointer-events-auto p-3 w-40">
+                    <div className="bg-white/95 dark:bg-stone-900/95 backdrop-blur rounded-2xl shadow-md border border-stone-200/60 dark:border-stone-800 flex flex-col pointer-events-auto p-3 w-40">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500">Grid Size</span>
-                            <span className="text-[10px] font-mono font-bold text-charcoal">{gridSize.toFixed(1)}x</span>
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500 dark:text-stone-400">Grid Size</span>
+                            <span className="text-[10px] font-mono font-bold text-charcoal dark:text-stone-200">{gridSize.toFixed(1)}x</span>
                         </div>
-                        <p className="text-[9px] text-stone-400 mb-2 font-mono">
+                        <p className="text-[9px] text-stone-400 dark:text-stone-500 mb-2 font-mono">
                             1 cell = {unit === 'ft' ? `~${(gridSize * 3.28084).toFixed(1)} ft` : `${gridSize.toFixed(1)} m`}
                         </p>
                         <input
@@ -1235,32 +1224,32 @@ const Create = () => {
                             step="0.1"
                             value={gridSize}
                             onChange={(e) => setGridSize(parseFloat(e.target.value))}
-                            className="w-full h-1 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-charcoal"
+                            className="w-full h-1 bg-stone-200 dark:bg-stone-700 rounded-lg appearance-none cursor-pointer accent-charcoal dark:accent-stone-300"
                         />
                     </div>
                     {/* Wall Theme Selector */}
                     {modelUrl && (
-                        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-md border border-stone-200/60 flex flex-col pointer-events-auto p-3 w-40">
-                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500 mb-2">Wall Color</span>
+                        <div className="bg-white/95 dark:bg-stone-900/95 backdrop-blur rounded-2xl shadow-md border border-stone-200/60 dark:border-stone-800 flex flex-col pointer-events-auto p-3 w-40">
+                            <span className="text-[9px] uppercase tracking-wider font-bold text-stone-500 dark:text-stone-400 mb-2">Wall Color</span>
                             <div className="flex gap-2 justify-between">
                                 <button
                                     onClick={() => setWallTheme('modernWhite')}
-                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'modernWhite' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#F5F5F5]`}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'modernWhite' ? 'ring-2 ring-charcoal dark:ring-stone-200 ring-offset-1 border-stone-400 dark:border-stone-500' : 'border-stone-200 dark:border-stone-700'} bg-[#F5F5F5]`}
                                     title="Modern White"
                                 />
                                 <button
                                     onClick={() => setWallTheme('softYellow')}
-                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'softYellow' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#FEFCE8]`}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'softYellow' ? 'ring-2 ring-charcoal dark:ring-stone-200 ring-offset-1 border-stone-400 dark:border-stone-500' : 'border-stone-200 dark:border-stone-700'} bg-[#FEFCE8]`}
                                     title="Soft Yellow"
                                 />
                                 <button
                                     onClick={() => setWallTheme('classicGrey')}
-                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'classicGrey' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#D1D5DB]`}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'classicGrey' ? 'ring-2 ring-charcoal dark:ring-stone-200 ring-offset-1 border-stone-400 dark:border-stone-500' : 'border-stone-200 dark:border-stone-700'} bg-[#D1D5DB]`}
                                     title="Classic Grey"
                                 />
                                 <button
                                     onClick={() => setWallTheme('warmCream')}
-                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'warmCream' ? 'ring-2 ring-charcoal ring-offset-1 border-stone-400' : 'border-stone-200'} bg-[#FAF8F5]`}
+                                    className={`w-6 h-6 rounded-full border transition-all hover:scale-110 ${wallTheme === 'warmCream' ? 'ring-2 ring-charcoal dark:ring-stone-200 ring-offset-1 border-stone-400 dark:border-stone-500' : 'border-stone-200 dark:border-stone-700'} bg-[#FAF8F5]`}
                                     title="Warm Cream"
                                 />
                             </div>
@@ -1269,13 +1258,13 @@ const Create = () => {
                 </div>
 
                 {!modelUrl && step !== 3 && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none bg-[#fbfbf9] bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] bg-[size:32px_32px]">
-                        <div className="flex flex-col items-center justify-center text-stone-450 p-6 glass-card border border-stone-200/50 max-w-xs text-center shadow-lg bg-white/90">
-                            <div className="w-12 h-12 border border-stone-200/80 rounded-full flex items-center justify-center mb-3 bg-white shadow-inner">
-                                <span className="text-xs font-bold text-stone-500 font-mono">3D</span>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none bg-[#fbfbf9] dark:bg-stone-950 bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px]">
+                        <div className="flex flex-col items-center justify-center text-stone-450 dark:text-stone-400 p-6 glass-card border border-stone-200/50 dark:border-stone-800 max-w-xs text-center shadow-lg bg-white/90 dark:bg-stone-900/90">
+                            <div className="w-12 h-12 border border-stone-200/80 dark:border-stone-700 rounded-full flex items-center justify-center mb-3 bg-white dark:bg-stone-800 shadow-inner">
+                                <span className="text-xs font-bold text-stone-500 dark:text-stone-400 font-mono">3D</span>
                             </div>
-                            <h4 className="text-xs font-bold text-stone-700 mb-1 uppercase tracking-wider font-mono">3D Viewport</h4>
-                            <p className="text-[10px] text-stone-500 font-light font-sans leading-relaxed">Complete the Design Wizard inputs and compile to generate your interactive 3D layout here.</p>
+                            <h4 className="text-xs font-bold text-stone-700 dark:text-stone-200 mb-1 uppercase tracking-wider font-mono">3D Viewport</h4>
+                            <p className="text-[10px] text-stone-500 dark:text-stone-400 font-light font-sans leading-relaxed">Complete the Design Wizard inputs and compile to generate your interactive 3D layout here.</p>
                         </div>
                     </div>
                 )}

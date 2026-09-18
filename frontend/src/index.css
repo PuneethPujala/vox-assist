@@ -4,18 +4,51 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --background: #fafaf9;
+  --foreground: #1c1917;
+  --card: rgba(255, 255, 255, 0.85);
+  --card-foreground: #1c1917;
+  --card-border: rgba(231, 229, 228, 0.6);
+  --muted: #f5f5f4;
+  --muted-foreground: #78716c;
+}
+
+.dark {
+  --background: #0c0a09;
+  --foreground: #f5f5f4;
+  --card: rgba(28, 25, 23, 0.85);
+  --card-foreground: #f5f5f4;
+  --card-border: rgba(68, 64, 60, 0.5);
+  --muted: #1c1917;
+  --muted-foreground: #a8a29e;
+}
+
 body {
   font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
   background-color: #fafaf9; /* Cream/Stone background */
   color: #1c1917; /* Stone 900 */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dark body,
+html.dark body {
+  background-color: #0c0a09;
+  color: #f5f5f4;
 }
 
 @layer components {
   .page-container {
-    @apply min-h-screen pt-24 pb-16 px-4 sm:px-6 lg:px-8 relative overflow-hidden;
+    @apply min-h-screen pt-24 pb-16 px-4 sm:px-6 lg:px-8 relative overflow-hidden transition-colors duration-200;
     background: radial-gradient(circle at 10% 20%, rgba(253, 244, 215, 0.35) 0%, transparent 40%),
                 radial-gradient(circle at 90% 80%, rgba(224, 231, 255, 0.3) 0%, transparent 50%),
                 #fafaf9;
+  }
+
+  .dark .page-container {
+    background: radial-gradient(circle at 10% 20%, rgba(41, 37, 36, 0.45) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(30, 41, 59, 0.35) 0%, transparent 50%),
+                #0c0a09;
   }
   
   .content-grid {
@@ -23,31 +56,31 @@ body {
   }
   
   .glass-card {
-    @apply bg-white/85 border border-stone-200/60 rounded-[32px] shadow-[0_8px_32px_0_rgba(28,25,23,0.04)] backdrop-blur-md p-6 relative overflow-hidden;
+    @apply bg-white/85 dark:bg-stone-900/85 border border-stone-200/60 dark:border-stone-800/80 rounded-[32px] shadow-[0_8px_32px_0_rgba(28,25,23,0.04)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.4)] backdrop-blur-md p-6 relative overflow-hidden text-stone-900 dark:text-stone-100 transition-colors duration-200;
   }
   
   .glass-card-interactive {
-    @apply glass-card cursor-pointer transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_48px_0_rgba(28,25,23,0.08)] hover:border-stone-300/80;
+    @apply glass-card cursor-pointer transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_20px_48px_0_rgba(28,25,23,0.08)] dark:hover:shadow-[0_20px_48px_0_rgba(0,0,0,0.6)] hover:border-stone-300/80 dark:hover:border-stone-700/80;
   }
   
   .metric-card {
-    @apply bg-white/60 border border-stone-200/50 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow text-center flex flex-col items-center justify-center;
+    @apply bg-white/60 dark:bg-stone-900/60 border border-stone-200/50 dark:border-stone-800/60 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all text-center flex flex-col items-center justify-center text-stone-900 dark:text-stone-100;
   }
   
   .input-field {
-    @apply w-full p-3 bg-stone-50/50 border border-stone-200 rounded-xl focus:border-charcoal focus:ring-1 focus:ring-charcoal outline-none transition-shadow text-xs font-mono;
+    @apply w-full p-3 bg-stone-50/50 dark:bg-stone-900/80 border border-stone-200 dark:border-stone-700 rounded-xl focus:border-stone-900 dark:focus:border-stone-400 focus:ring-1 focus:ring-stone-900 dark:focus:ring-stone-400 outline-none transition-all text-xs font-mono text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500;
   }
   
   .btn-primary {
-    @apply px-5 py-2.5 bg-charcoal text-white rounded-xl hover:bg-stone-800 transition-all duration-200 font-medium shadow-md text-xs active:scale-95 flex items-center justify-center gap-2;
+    @apply px-5 py-2.5 bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 rounded-xl hover:bg-stone-800 dark:hover:bg-white transition-all duration-200 font-medium shadow-md text-xs active:scale-95 flex items-center justify-center gap-2;
   }
   
   .btn-secondary {
-    @apply px-5 py-2.5 bg-white hover:bg-stone-50 text-stone-600 border border-stone-200 rounded-xl transition-all duration-200 font-medium text-xs active:scale-95 flex items-center justify-center gap-2;
+    @apply px-5 py-2.5 bg-white dark:bg-stone-850 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 rounded-xl transition-all duration-200 font-medium text-xs active:scale-95 flex items-center justify-center gap-2;
   }
   
   .icon-btn {
-    @apply p-2.5 bg-white/80 hover:bg-white text-stone-500 hover:text-charcoal border border-stone-200/40 rounded-xl shadow-sm hover:scale-105 active:scale-95 transition-all flex items-center justify-center;
+    @apply p-2.5 bg-white/80 dark:bg-stone-850/80 hover:bg-white dark:hover:bg-stone-800 text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 border border-stone-200/40 dark:border-stone-700/60 rounded-xl shadow-sm hover:scale-105 active:scale-95 transition-all flex items-center justify-center;
   }
   
   .badge-premium {

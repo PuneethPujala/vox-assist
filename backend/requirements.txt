@@ -1,4 +1,4 @@
-﻿annotated-types==0.7.0
+annotated-types==0.7.0
 anyio==3.7.1
 asttokens==3.0.1
 attrs==25.4.0
@@ -139,3 +139,4 @@ zipp==3.23.0
 ollama
 
 slowapi
+pytest

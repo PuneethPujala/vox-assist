@@ -10,6 +10,7 @@ export default {
             colors: {
                 cream: '#fbfaf8',
                 charcoal: '#1c1917',
+                'stone-850': '#221e1b',
             }
         },
     },

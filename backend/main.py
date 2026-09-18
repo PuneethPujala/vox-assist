@@ -18,6 +18,7 @@ if sys.platform == "win32":
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from routes import api, user
+from config import settings
 from database.connection import connect_to_mongo, close_mongo_connection, create_database_indexes
 import database.connection
 from utils.rate_limit import limiter
@@ -85,13 +86,15 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"success": False, "error": str(exc), "message": "Internal Server Error"}
     )
 
-origins = [
+# Build allowed CORS origins from settings and standard defaults
+origins = list(dict.fromkeys(settings.CORS_ORIGINS + [
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://localhost:4173",
     "https://vox-assist.vercel.app",
     "https://vox-assist-pearl.vercel.app",
     "https://vox-assist-frontend.onrender.com"
-]
+]))
 
 app.add_middleware(
     CORSMiddleware,

@@ -14,24 +14,18 @@ import {
     ChevronRight,
     Plus,
     Trash2,
-    Download,
-    Maximize2,
-    Eye,
     RefreshCw,
     Play,
     Sliders,
     Text,
     FileText,
     CheckCircle2,
-    Info,
-    HelpCircle
+    Info
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 
 // Assets
-import voxHeroImage from '../assets/vox_architectural_render.png';
-import vox2DBlueprint from '../assets/vox_2d_blueprint.png';
 import vox3DStructure from '../assets/vox_3d_structure.png';
 
 const Dashboard = () => {
@@ -61,7 +55,6 @@ const Dashboard = () => {
 
     // Output Panel State
     const [outputTab, setOutputTab] = useState('blueprint'); // 'blueprint' or 'structure'
-    const [selectedCandidate, setSelectedCandidate] = useState('candidate-1');
     const [stats, setStats] = useState({ efficiency: 88, daylight: 91, privacy: 83, circulation: 90 });
 
     // SVG Donut Chart Calculation
@@ -214,7 +207,7 @@ const Dashboard = () => {
 
     const renderIsoBox = React.useCallback((x1, x2, y1, y2, z1, z2, topColor, sideColorA, sideColorB, strokeColor) => {
         const f0 = projectIso(x1, y1, z1);
-        const f1 = projectIso(x2, y1, z1);
+        const _f1 = projectIso(x2, y1, z1);
         const f2 = projectIso(x2, y2, z1);
         const f3 = projectIso(x1, y2, z1);
 
@@ -235,7 +228,7 @@ const Dashboard = () => {
         );
     }, [projectIso]);
 
-    const renderRoomFurniture = React.useCallback((room) => {
+    const _renderRoomFurniture = React.useCallback((room) => {
         const cx = room.x + room.width / 2;
         const r_cy = room.y + room.height / 2;
         const scale = Math.min(room.width, room.height) / 100;
@@ -300,7 +293,7 @@ const Dashboard = () => {
             );
         }
         return null;
-    }, [projectIso, renderIsoBox]);
+    }, [renderIsoBox]);
 
     // Scroll opacity calculation
     useEffect(() => {
@@ -471,7 +464,7 @@ const Dashboard = () => {
     };
 
     return (
-        <div className="min-h-screen bg-cream text-charcoal overflow-x-hidden selection:bg-stone-200 font-['Plus_Jakarta_Sans']">
+        <div className="min-h-screen bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 overflow-x-hidden selection:bg-stone-200 dark:selection:bg-stone-800 font-['Plus_Jakarta_Sans'] transition-colors duration-200">
             <Toaster />
 
             {/* Custom Google Fonts Import & CSS keyframes */}
@@ -498,38 +491,38 @@ const Dashboard = () => {
             {/* Redesigned Hero Section (Split View, Typewriter & Built-out layout preview) */}
             <div className="relative h-screen min-h-[650px] flex items-center justify-center pt-24 pb-16 px-4 md:px-8 overflow-hidden">
                 {/* Background ambient lighting */}
-                <div className="absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-amber-100/30 via-orange-100/10 to-stone-150/30 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-indigo-50/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-amber-100/30 via-orange-100/10 to-stone-150/30 dark:from-amber-500/10 dark:via-stone-800/20 dark:to-stone-900/30 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-indigo-50/10 dark:bg-indigo-950/20 rounded-full blur-3xl pointer-events-none" />
 
                 <div className="max-w-7xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center relative z-10">
 
                     {/* LEFT COLUMN: HERO TEXT */}
                     <div className="lg:col-span-5 flex flex-col items-start text-left">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-stone-100 text-stone-700 mb-6 tracking-wide uppercase border border-stone-200/50 shadow-sm select-none">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-stone-100 dark:bg-stone-900 text-stone-700 dark:text-stone-300 mb-6 tracking-wide uppercase border border-stone-200/50 dark:border-stone-800 shadow-sm select-none">
                             <Sparkles size={12} className="text-amber-500 animate-pulse" /> AI Architectural Compiler
                         </span>
 
-                        <h1 className="text-4xl sm:text-5xl md:text-6xl font-light text-charcoal mb-6 tracking-tight leading-[1.12] font-['Space_Grotesk']">
+                        <h1 className="text-4xl sm:text-5xl md:text-6xl font-light text-charcoal dark:text-stone-100 mb-6 tracking-tight leading-[1.12] font-['Space_Grotesk']">
                             Architectural Intelligence <br />
-                            <span className="font-semibold bg-gradient-to-r from-stone-900 via-stone-800 to-amber-700 bg-clip-text text-transparent">
+                            <span className="font-semibold bg-gradient-to-r from-stone-900 via-stone-800 to-amber-700 dark:from-stone-100 dark:via-stone-300 dark:to-amber-400 bg-clip-text text-transparent">
                                 Generated Instantly.
                             </span>
                         </h1>
 
-                        <p className="text-base md:text-lg text-stone-500 mb-10 leading-relaxed font-light max-w-xl">
+                        <p className="text-base md:text-lg text-stone-500 dark:text-stone-400 mb-10 leading-relaxed font-light max-w-xl">
                             VoxAssist converts conversational spatial descriptions into precise 2D blueprints and clean 3D structure wireframes in seconds. No manual CAD drafts needed.
                         </p>
 
                         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
                             <Link
                                 to="/create"
-                                className="inline-flex items-center justify-center px-8 py-4 bg-charcoal text-cream rounded-full text-base font-semibold hover:bg-stone-850 transition-all duration-300 hover:scale-[1.03] shadow-lg group"
+                                className="inline-flex items-center justify-center px-8 py-4 bg-charcoal dark:bg-stone-100 text-cream dark:text-stone-900 rounded-full text-base font-semibold hover:bg-stone-850 dark:hover:bg-white transition-all duration-300 hover:scale-[1.03] shadow-lg group"
                             >
                                 Start Creating <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" size={18} />
                             </Link>
                             <a
                                 href="#sandbox"
-                                className="inline-flex items-center justify-center px-8 py-4 bg-white/80 backdrop-blur-sm text-charcoal border border-stone-200 rounded-full text-base font-medium hover:bg-stone-50 transition-all duration-300"
+                                className="inline-flex items-center justify-center px-8 py-4 bg-white/80 dark:bg-stone-900/80 backdrop-blur-sm text-charcoal dark:text-stone-100 border border-stone-200 dark:border-stone-800 rounded-full text-base font-medium hover:bg-stone-50 dark:hover:bg-stone-800 transition-all duration-300"
                             >
                                 Try Interactive Sandbox
                             </a>
@@ -694,39 +687,39 @@ const Dashboard = () => {
             {/* Interactive Sandbox Playground */}
             <div id="sandbox" className="py-20 px-4 max-w-7xl mx-auto relative z-25 scroll-mt-20">
                 <div className="text-center mb-12">
-                    <h2 className="text-3xl md:text-5xl font-light text-charcoal tracking-tight mb-3">
+                    <h2 className="text-3xl md:text-5xl font-light text-charcoal dark:text-stone-100 tracking-tight mb-3">
                         Interactive <span className="font-semibold">Design Sandbox</span>
                     </h2>
-                    <p className="text-stone-500 max-w-xl mx-auto font-light">
+                    <p className="text-stone-500 dark:text-stone-400 max-w-xl mx-auto font-light">
                         Test the generator layout engine. Configure your rooms or write a prompt below, then hit compile to build your structural layout.
                     </p>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     {/* LEFT PANEL - CONFIGURATOR */}
-                    <div className="lg:col-span-5 bg-white/80 border border-stone-200/60 rounded-3xl p-6 shadow-xl relative backdrop-blur-md flex flex-col gap-6">
-                        <div className="flex items-center justify-between border-b border-stone-100 pb-4">
+                    <div className="lg:col-span-5 bg-white/80 dark:bg-stone-900/80 border border-stone-200/60 dark:border-stone-800 rounded-3xl p-6 shadow-xl relative backdrop-blur-md flex flex-col gap-6">
+                        <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-4">
                             <div className="flex items-center gap-2">
-                                <Sliders size={18} className="text-stone-600" />
-                                <h3 className="font-semibold text-stone-900 text-lg">Configurator Wizard</h3>
+                                <Sliders size={18} className="text-stone-600 dark:text-stone-300" />
+                                <h3 className="font-semibold text-stone-900 dark:text-stone-100 text-lg">Configurator Wizard</h3>
                             </div>
-                            <span className="px-2.5 py-1 text-[10px] font-semibold text-amber-700 bg-amber-50 rounded-full uppercase tracking-wider">
+                            <span className="px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 rounded-full uppercase tracking-wider">
                                 Demo Mode
                             </span>
                         </div>
 
                         {/* Configurator Mode Tabs */}
-                        <div className="grid grid-cols-2 p-1 bg-stone-100 rounded-xl">
+                        <div className="grid grid-cols-2 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
                             <button
                                 onClick={() => { setActiveTab('builder'); handleReset(); }}
-                                className={`py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'builder' ? 'bg-white text-charcoal shadow-sm' : 'text-stone-500 hover:text-stone-900'
+                                className={`py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'builder' ? 'bg-white dark:bg-stone-900 text-charcoal dark:text-stone-100 shadow-sm' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
                                     }`}
                             >
                                 <Layout size={14} /> Room Builder
                             </button>
                             <button
                                 onClick={() => { setActiveTab('prompt'); handleReset(); }}
-                                className={`py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'prompt' ? 'bg-white text-charcoal shadow-sm' : 'text-stone-500 hover:text-stone-900'
+                                className={`py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'prompt' ? 'bg-white dark:bg-stone-900 text-charcoal dark:text-stone-100 shadow-sm' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
                                     }`}
                             >
                                 <Text size={14} /> Text Prompt
@@ -737,7 +730,7 @@ const Dashboard = () => {
                         {activeTab === 'builder' && (
                             <div className="flex flex-col gap-5">
                                 {/* SVG Donut and Total Info */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-stone-50 p-4 rounded-2xl border border-stone-150">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-stone-50 dark:bg-stone-950/60 p-4 rounded-2xl border border-stone-150 dark:border-stone-800">
                                     <div className="flex justify-center relative">
                                         <svg width="110" height="110" viewBox="0 0 100 100">
                                             <circle cx="50" cy="50" r={radius} fill="transparent" stroke="#e5e7eb" strokeWidth="8" />
@@ -767,18 +760,18 @@ const Dashboard = () => {
                                         </svg>
                                         <div className="absolute inset-0 flex flex-col items-center justify-center">
                                             <span className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">Total</span>
-                                            <span className="text-base font-bold text-stone-900 font-mono">{totalArea}</span>
+                                            <span className="text-base font-bold text-stone-900 dark:text-stone-100 font-mono">{totalArea}</span>
                                             <span className="text-[9px] text-stone-400">sqft</span>
                                         </div>
                                     </div>
 
                                     <div className="flex flex-col gap-1.5">
-                                        <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Area Distribution</span>
+                                        <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">Area Distribution</span>
                                         <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto pr-1">
                                             {rooms.map((room, idx) => (
                                                 <span
                                                     key={room.id}
-                                                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-stone-200/50 bg-white shadow-sm font-medium"
+                                                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-stone-200/50 dark:border-stone-700 bg-white dark:bg-stone-850 text-stone-700 dark:text-stone-300 shadow-sm font-medium"
                                                 >
                                                     <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: roomColors[idx % roomColors.length] }} />
                                                     {room.type}: {room.area}
@@ -793,7 +786,7 @@ const Dashboard = () => {
                                     {rooms.map((room, idx) => (
                                         <div
                                             key={room.id}
-                                            className="flex flex-col gap-1.5 p-3.5 bg-white border border-stone-150 rounded-xl shadow-sm hover:border-stone-300 transition-colors"
+                                            className="flex flex-col gap-1.5 p-3.5 bg-white dark:bg-stone-850 border border-stone-150 dark:border-stone-700 rounded-xl shadow-sm hover:border-stone-300 dark:hover:border-stone-600 transition-colors"
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="flex items-center gap-1.5">
@@ -801,7 +794,7 @@ const Dashboard = () => {
                                                     <select
                                                         value={room.type}
                                                         onChange={(e) => handleTypeChange(room.id, e.target.value)}
-                                                        className="text-xs font-semibold text-stone-800 bg-stone-50 hover:bg-stone-100 border border-stone-200 px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-stone-400 min-w-[125px]"
+                                                        className="text-xs font-semibold text-stone-800 dark:text-stone-200 bg-stone-50 dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-800 border border-stone-200 dark:border-stone-700 px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-stone-400 min-w-[125px]"
                                                     >
                                                         {roomTypes.map(type => (
                                                             <option key={type} value={type}>{type}</option>
@@ -810,12 +803,12 @@ const Dashboard = () => {
                                                 </div>
 
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-bold text-stone-700 font-mono w-14 text-right">
+                                                    <span className="text-xs font-bold text-stone-700 dark:text-stone-200 font-mono w-14 text-right">
                                                         {room.area} <span className="font-light text-[10px] text-stone-400">sqft</span>
                                                     </span>
                                                     <button
                                                         onClick={() => removeRoom(room.id)}
-                                                        className="text-stone-400 hover:text-red-500 p-1 rounded-md hover:bg-red-50 transition-colors"
+                                                        className="text-stone-400 hover:text-red-500 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                                                     >
                                                         <Trash2 size={13} />
                                                     </button>
@@ -829,7 +822,7 @@ const Dashboard = () => {
                                                 step="10"
                                                 value={room.area}
                                                 onChange={(e) => handleAreaChange(room.id, e.target.value)}
-                                                className="w-full accent-charcoal cursor-pointer h-1.5 bg-stone-100 rounded-lg appearance-none"
+                                                className="w-full accent-stone-900 dark:accent-stone-100 cursor-pointer h-1.5 bg-stone-100 dark:bg-stone-800 rounded-lg appearance-none"
                                             />
                                         </div>
                                     ))}
@@ -837,7 +830,7 @@ const Dashboard = () => {
 
                                 <button
                                     onClick={addRoom}
-                                    className="w-full py-2.5 border border-dashed border-stone-300 hover:border-stone-500 rounded-xl text-xs font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center justify-center gap-1"
+                                    className="w-full py-2.5 border border-dashed border-stone-300 dark:border-stone-700 hover:border-stone-500 dark:hover:border-stone-500 rounded-xl text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-colors flex items-center justify-center gap-1"
                                 >
                                     <Plus size={14} /> Add Custom Room
                                 </button>
@@ -848,13 +841,13 @@ const Dashboard = () => {
                         {activeTab === 'prompt' && (
                             <div className="flex flex-col gap-4">
                                 <div className="flex flex-col gap-1.5">
-                                    <label className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Describe Your Layout Constraints</label>
+                                    <label className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">Describe Your Layout Constraints</label>
                                     <textarea
                                         value={promptText}
                                         onChange={(e) => setPromptText(e.target.value)}
                                         rows="4"
                                         placeholder="Describe details, rooms, adjacencies, and total square footage..."
-                                        className="w-full border border-stone-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 resize-none font-light leading-relaxed bg-stone-50/50"
+                                        className="w-full border border-stone-200 dark:border-stone-700 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 resize-none font-light leading-relaxed bg-stone-50/50 dark:bg-stone-900/50 text-stone-900 dark:text-stone-100 placeholder:text-stone-400"
                                     />
                                 </div>
 
@@ -863,19 +856,19 @@ const Dashboard = () => {
                                     <div className="flex flex-wrap gap-2">
                                         <button
                                             onClick={() => applyTemplate("I have 1000sqft, I want a 2bhk layout with a 300sqft Living Room, 150sqft Bedroom, 120sqft Kitchen and a small Bathroom next to the bedroom.")}
-                                            className="px-2.5 py-1 text-xs bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 rounded-lg transition-colors font-medium"
+                                            className="px-2.5 py-1 text-xs bg-stone-50 dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 rounded-lg transition-colors font-medium"
                                         >
                                             2BHK Layout
                                         </button>
                                         <button
                                             onClick={() => applyTemplate("I have 600sqft, open-concept studio space, large kitchen partition, private bathroom, and plenty of natural daylight.")}
-                                            className="px-2.5 py-1 text-xs bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 rounded-lg transition-colors font-medium"
+                                            className="px-2.5 py-1 text-xs bg-stone-50 dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 rounded-lg transition-colors font-medium"
                                         >
                                             Studio Layout
                                         </button>
                                         <button
                                             onClick={() => applyTemplate("I have 1500sqft, 3 rooms, large living area, open kitchen space, and bedrooms sharing a wall with the bathroom.")}
-                                            className="px-2.5 py-1 text-xs bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 rounded-lg transition-colors font-medium"
+                                            className="px-2.5 py-1 text-xs bg-stone-50 dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 rounded-lg transition-colors font-medium"
                                         >
                                             Cabin Structure
                                         </button>
@@ -885,27 +878,27 @@ const Dashboard = () => {
                         )}
 
                         {/* Compilation Button Trigger */}
-                        <div className="pt-2 border-t border-stone-100">
+                        <div className="pt-2 border-t border-stone-100 dark:border-stone-800">
                             {compileState === 'idle' && (
                                 <button
                                     onClick={handleCompile}
-                                    className="w-full py-4 bg-charcoal text-cream font-semibold rounded-2xl hover:bg-stone-850 hover:shadow-lg transition-all flex items-center justify-center gap-2 group text-sm shadow-md"
+                                    className="w-full py-4 bg-charcoal dark:bg-stone-100 text-cream dark:text-stone-900 font-semibold rounded-2xl hover:bg-stone-850 dark:hover:bg-white hover:shadow-lg transition-all flex items-center justify-center gap-2 group text-sm shadow-md"
                                 >
                                     <Play size={15} fill="currentColor" className="group-hover:scale-110 transition-transform" /> Compile Layout Draft
                                 </button>
                             )}
 
                             {compileState === 'compiling' && (
-                                <div className="w-full p-4 bg-stone-50 rounded-2xl border border-stone-200 flex flex-col gap-3">
+                                <div className="w-full p-4 bg-stone-50 dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 flex flex-col gap-3">
                                     <div className="flex items-center justify-between text-xs">
-                                        <span className="font-semibold text-stone-700 flex items-center gap-1.5">
-                                            <RefreshCw size={12} className="animate-spin text-charcoal" /> {compileMessage}
+                                        <span className="font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                                            <RefreshCw size={12} className="animate-spin text-charcoal dark:text-stone-200" /> {compileMessage}
                                         </span>
-                                        <span className="font-mono font-bold text-stone-900">{compileProgress}%</span>
+                                        <span className="font-mono font-bold text-stone-900 dark:text-stone-100">{compileProgress}%</span>
                                     </div>
-                                    <div className="w-full bg-stone-200 h-1.5 rounded-full overflow-hidden">
+                                    <div className="w-full bg-stone-200 dark:bg-stone-800 h-1.5 rounded-full overflow-hidden">
                                         <div
-                                            className="bg-charcoal h-full rounded-full transition-all duration-300"
+                                            className="bg-stone-900 dark:bg-stone-100 h-full rounded-full transition-all duration-300"
                                             style={{ width: `${compileProgress}%` }}
                                         />
                                     </div>
@@ -915,7 +908,7 @@ const Dashboard = () => {
                             {compileState === 'compiled' && (
                                 <button
                                     onClick={handleReset}
-                                    className="w-full py-3.5 border border-stone-300 hover:border-stone-850 text-stone-700 hover:text-stone-950 font-semibold rounded-2xl transition-all flex items-center justify-center gap-2 text-sm"
+                                    className="w-full py-3.5 border border-stone-300 dark:border-stone-700 hover:border-stone-850 dark:hover:border-stone-400 text-stone-700 dark:text-stone-300 hover:text-stone-950 dark:hover:text-stone-100 font-semibold rounded-2xl transition-all flex items-center justify-center gap-2 text-sm"
                                 >
                                     <RefreshCw size={14} /> Adjust Config & Reset Sandbox
                                 </button>
@@ -924,7 +917,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* RIGHT PANEL - LIVE VISUALIZATION */}
-                    <div className="lg:col-span-7 bg-white/60 border border-stone-200/40 rounded-3xl shadow-xl overflow-hidden min-h-[520px] flex flex-col justify-between backdrop-blur-sm relative animate-fade-in">
+                    <div className="lg:col-span-7 bg-white/60 dark:bg-stone-900/60 border border-stone-200/40 dark:border-stone-800 rounded-3xl shadow-xl overflow-hidden min-h-[520px] flex flex-col justify-between backdrop-blur-sm relative animate-fade-in">
                         {/* Blueprint grid background */}
                         <div
                             className="absolute inset-0 opacity-[0.03] pointer-events-none"
@@ -937,12 +930,12 @@ const Dashboard = () => {
                         {/* BEFORE COMPILATION (IDLE STATE) */}
                         {compileState === 'idle' && (
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 relative z-10">
-                                <div className="w-16 h-16 bg-stone-100 border border-stone-200 rounded-2xl flex items-center justify-center text-stone-500 mb-6 shadow-sm relative overflow-hidden group">
-                                    <Layout size={30} className="relative z-10 text-stone-600" />
-                                    <div className="absolute inset-0 bg-stone-200/50 pulse-slow" />
+                                <div className="w-16 h-16 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl flex items-center justify-center text-stone-500 dark:text-stone-400 mb-6 shadow-sm relative overflow-hidden group">
+                                    <Layout size={30} className="relative z-10 text-stone-600 dark:text-stone-300" />
+                                    <div className="absolute inset-0 bg-stone-200/50 dark:bg-stone-700/50 pulse-slow" />
                                 </div>
-                                <h4 className="text-xl font-semibold text-stone-900 mb-2">Design Canvas Sandbox</h4>
-                                <p className="text-sm text-stone-500 max-w-sm font-light leading-relaxed">
+                                <h4 className="text-xl font-semibold text-stone-900 dark:text-stone-100 mb-2">Design Canvas Sandbox</h4>
+                                <p className="text-sm text-stone-500 dark:text-stone-400 max-w-sm font-light leading-relaxed">
                                     Configure your rooms or text description in the wizard, then click **Compile Layout Draft** to see the 2D layout and 3D structural model.
                                 </p>
                             </div>
@@ -978,18 +971,18 @@ const Dashboard = () => {
                         {compileState === 'compiled' && (
                             <div className="flex-1 flex flex-col relative z-10">
                                 {/* Navigation and Tab Selector */}
-                                <div className="flex flex-wrap items-center justify-between border-b border-stone-150 p-4 bg-white/40 gap-4">
-                                    <div className="flex items-center gap-1.5 p-1 bg-stone-100 rounded-lg">
+                                <div className="flex flex-wrap items-center justify-between border-b border-stone-150 dark:border-stone-800 p-4 bg-white/40 dark:bg-stone-900/40 gap-4">
+                                    <div className="flex items-center gap-1.5 p-1 bg-stone-100 dark:bg-stone-800 rounded-lg">
                                         <button
                                             onClick={() => setOutputTab('blueprint')}
-                                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${outputTab === 'blueprint' ? 'bg-white text-charcoal shadow-sm' : 'text-stone-500 hover:text-stone-900'
+                                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${outputTab === 'blueprint' ? 'bg-white dark:bg-stone-900 text-charcoal dark:text-stone-100 shadow-sm' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
                                                 }`}
                                         >
                                             2D Blueprint
                                         </button>
                                         <button
                                             onClick={() => setOutputTab('structure')}
-                                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${outputTab === 'structure' ? 'bg-white text-charcoal shadow-sm' : 'text-stone-500 hover:text-stone-900'
+                                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${outputTab === 'structure' ? 'bg-white dark:bg-stone-900 text-charcoal dark:text-stone-100 shadow-sm' : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
                                                 }`}
                                         >
                                             3D Structure
@@ -999,13 +992,13 @@ const Dashboard = () => {
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => handleDownloadWarning('2D PDF Blueprint')}
-                                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white border border-stone-200 hover:bg-stone-50 rounded-lg shadow-sm transition-colors text-stone-700"
+                                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white dark:bg-stone-850 border border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800 rounded-lg shadow-sm transition-colors text-stone-700 dark:text-stone-300"
                                         >
                                             <FileText size={13} /> Export PDF
                                         </button>
                                         <button
                                             onClick={() => handleDownloadWarning('3D STL Mesh')}
-                                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-charcoal text-cream hover:bg-stone-850 rounded-lg shadow-sm transition-colors"
+                                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-charcoal dark:bg-stone-100 text-cream dark:text-stone-900 hover:bg-stone-850 dark:hover:bg-white rounded-lg shadow-sm transition-colors"
                                         >
                                             <Box size={13} /> Export STL
                                         </button>
@@ -1013,9 +1006,9 @@ const Dashboard = () => {
                                 </div>
 
                                 {/* Content Canvas */}
-                                <div className="flex-1 min-h-[300px] flex items-center justify-center p-6 bg-stone-50 relative group">
+                                <div className="flex-1 min-h-[300px] flex items-center justify-center p-6 bg-stone-50 dark:bg-stone-950/60 relative group">
                                      {outputTab === 'blueprint' ? (
-                                        <div className="relative w-full h-full max-h-[340px] flex items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50 p-2">
+                                        <div className="relative w-full h-full max-h-[340px] flex items-center justify-center overflow-hidden rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-900 p-2">
                                             {/* Dynamic SVG Blueprint Canvas */}
                                             <svg viewBox="-10 -10 500 300" className="w-full h-full object-contain">
                                                 {/* Grid Background */}
@@ -1155,13 +1148,13 @@ const Dashboard = () => {
                                             </svg>
                                         </div>
                                     ) : (
-                                        <div className="relative w-full h-full max-h-[340px] flex flex-col items-center justify-center rounded-xl overflow-hidden border border-stone-200 bg-stone-50 p-2">
+                                        <div className="relative w-full h-full max-h-[340px] flex flex-col items-center justify-center rounded-xl overflow-hidden border border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-900 p-2">
                                             <img src={vox3DStructure} className="w-full h-full object-contain rounded-xl" alt="3D Cardboard House Structure" />
 
                                             {/* Hover info overlay to highlight that only structures are generated */}
-                                            <div className="absolute bottom-3 left-3 right-3 bg-white/90 border border-stone-200 rounded-xl p-2 flex items-start gap-1.5 backdrop-blur-sm pointer-events-none z-20">
-                                                <Info size={12} className="text-stone-600 shrink-0 mt-0.5" />
-                                                <p className="text-[9px] text-stone-500 leading-normal">
+                                            <div className="absolute bottom-3 left-3 right-3 bg-white/90 dark:bg-stone-900/90 border border-stone-200 dark:border-stone-800 rounded-xl p-2 flex items-start gap-1.5 backdrop-blur-sm pointer-events-none z-20">
+                                                <Info size={12} className="text-stone-600 dark:text-stone-400 shrink-0 mt-0.5" />
+                                                <p className="text-[9px] text-stone-500 dark:text-stone-400 leading-normal">
                                                      <strong>Architectural Model:</strong> Solid cardboard partition models showing exact offsets, shared walls, and room layout branches.
                                                 </p>
                                             </div>
@@ -1170,41 +1163,41 @@ const Dashboard = () => {
                                 </div>
 
                                 {/* Performance Analysis Scores */}
-                                <div className="border-t border-stone-150 p-4 bg-white/40 grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
+                                <div className="border-t border-stone-150 dark:border-stone-800 p-4 bg-white/40 dark:bg-stone-900/40 grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
                                     <div className="flex flex-col gap-1 select-none">
                                         <span className="text-[9px] text-stone-400 font-bold uppercase tracking-wider">Layout Efficiency</span>
                                         <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-stone-200 h-1.5 rounded-full overflow-hidden">
+                                            <div className="flex-1 bg-stone-200 dark:bg-stone-800 h-1.5 rounded-full overflow-hidden">
                                                 <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{ width: `${stats.efficiency}%` }} />
                                             </div>
-                                            <span className="text-xs font-bold text-stone-700 font-mono">{stats.efficiency}%</span>
+                                            <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-mono">{stats.efficiency}%</span>
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-1 select-none">
                                         <span className="text-[9px] text-stone-400 font-bold uppercase tracking-wider">Daylight Index</span>
                                         <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-stone-200 h-1.5 rounded-full overflow-hidden">
+                                            <div className="flex-1 bg-stone-200 dark:bg-stone-800 h-1.5 rounded-full overflow-hidden">
                                                 <div className="bg-amber-500 h-full rounded-full transition-all duration-700" style={{ width: `${stats.daylight}%` }} />
                                             </div>
-                                            <span className="text-xs font-bold text-stone-700 font-mono">{stats.daylight}%</span>
+                                            <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-mono">{stats.daylight}%</span>
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-1 select-none">
                                         <span className="text-[9px] text-stone-400 font-bold uppercase tracking-wider">Privacy Rating</span>
                                         <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-stone-200 h-1.5 rounded-full overflow-hidden">
+                                            <div className="flex-1 bg-stone-200 dark:bg-stone-800 h-1.5 rounded-full overflow-hidden">
                                                 <div className="bg-indigo-500 h-full rounded-full transition-all duration-700" style={{ width: `${stats.privacy}%` }} />
                                             </div>
-                                            <span className="text-xs font-bold text-stone-700 font-mono">{stats.privacy}%</span>
+                                            <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-mono">{stats.privacy}%</span>
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-1 select-none">
                                         <span className="text-[9px] text-stone-400 font-bold uppercase tracking-wider">Circulation flow</span>
                                         <div className="flex items-center gap-2">
-                                            <div className="flex-1 bg-stone-200 h-1.5 rounded-full overflow-hidden">
+                                            <div className="flex-1 bg-stone-200 dark:bg-stone-800 h-1.5 rounded-full overflow-hidden">
                                                 <div className="bg-pink-500 h-full rounded-full transition-all duration-700" style={{ width: `${stats.circulation}%` }} />
                                             </div>
-                                            <span className="text-xs font-bold text-stone-700 font-mono">{stats.circulation}%</span>
+                                            <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-mono">{stats.circulation}%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1215,12 +1208,12 @@ const Dashboard = () => {
             </div>
 
             {/* Process Timeline section */}
-            <div className="py-24 px-4 max-w-7xl mx-auto border-t border-stone-100">
+            <div className="py-24 px-4 max-w-7xl mx-auto border-t border-stone-100 dark:border-stone-850">
                 <div className="text-center mb-16">
-                    <h2 className="text-3xl md:text-5xl font-light text-charcoal tracking-tight mb-4 animate-fade-in">
+                    <h2 className="text-3xl md:text-5xl font-light text-charcoal dark:text-stone-100 tracking-tight mb-4 animate-fade-in">
                         How <span className="font-semibold">VoxAssist Works</span>
                     </h2>
-                    <p className="text-stone-500 max-w-xl mx-auto font-light">
+                    <p className="text-stone-500 dark:text-stone-400 max-w-xl mx-auto font-light">
                         A clean automated pipeline transforming conversation constraints to structural 3D volumes.
                     </p>
                 </div>
@@ -1254,13 +1247,13 @@ const Dashboard = () => {
             </div>
 
             {/* Feature Cards Grid */}
-            <div className="bg-stone-50/50 py-24 border-t border-stone-100">
+            <div className="bg-stone-50/50 dark:bg-stone-950/50 py-24 border-t border-stone-100 dark:border-stone-850">
                 <div className="px-4 max-w-7xl mx-auto">
                     <div className="text-center mb-16">
-                        <h2 className="text-3xl md:text-5xl font-light text-charcoal tracking-tight mb-4">
+                        <h2 className="text-3xl md:text-5xl font-light text-charcoal dark:text-stone-100 tracking-tight mb-4">
                             High Fidelity <span className="font-semibold">Layout Architectures</span>
                         </h2>
-                        <p className="text-stone-500 max-w-xl mx-auto font-light">
+                        <p className="text-stone-500 dark:text-stone-400 max-w-xl mx-auto font-light">
                             Built for modern architectural workflows, compiling spatial requirements directly into CAD formats.
                         </p>
                     </div>
@@ -1394,45 +1387,45 @@ const Dashboard = () => {
     );
 };
 
-const TechBadge = ({ label, sub }) => (
+const _TechBadge = ({ label, sub }) => (
     <div className="flex flex-col items-center select-none group">
-        <span className="text-sm font-semibold text-charcoal group-hover:text-amber-700 transition-colors duration-300">{label}</span>
+        <span className="text-sm font-semibold text-charcoal dark:text-stone-100 group-hover:text-amber-700 dark:group-hover:text-amber-400 transition-colors duration-300">{label}</span>
         <span className="text-[10px] text-stone-400 uppercase tracking-widest font-mono mt-0.5">{sub}</span>
     </div>
 );
 
 const StepCard = ({ num, icon, title, desc }) => (
     <motion.div
-        whileHover={{ y: -6, scale: 1.02, boxShadow: "0 20px 40px rgba(0, 0, 0, 0.05)" }}
-        className="p-8 bg-white/30 backdrop-blur-md rounded-3xl border border-white/60 shadow-sm relative group transition-all duration-300 hover:bg-white/50 hover:border-white/80"
+        whileHover={{ y: -6, scale: 1.02, boxShadow: "0 20px 40px rgba(0, 0, 0, 0.1)" }}
+        className="p-8 bg-white/40 dark:bg-stone-900/60 backdrop-blur-md rounded-3xl border border-stone-200/60 dark:border-stone-800 shadow-sm relative group transition-all duration-300 hover:bg-white/70 dark:hover:bg-stone-900/90 hover:border-stone-300 dark:hover:border-stone-700"
     >
-        <span className="absolute top-6 right-8 text-4xl font-light text-stone-300 group-hover:text-stone-400 font-mono transition-colors duration-300 font-semibold">
+        <span className="absolute top-6 right-8 text-4xl font-light text-stone-300 dark:text-stone-700 group-hover:text-stone-400 dark:group-hover:text-stone-500 font-mono transition-colors duration-300 font-semibold">
             {num}
         </span>
-        <div className="w-12 h-12 bg-white/80 rounded-xl flex items-center justify-center text-stone-700 mb-6 group-hover:bg-charcoal group-hover:text-cream transition-all duration-300 border border-white/80 shadow-inner">
+        <div className="w-12 h-12 bg-white/90 dark:bg-stone-800 rounded-xl flex items-center justify-center text-stone-700 dark:text-stone-200 mb-6 group-hover:bg-stone-900 dark:group-hover:bg-stone-100 group-hover:text-stone-50 dark:group-hover:text-stone-900 transition-all duration-300 border border-stone-200/60 dark:border-stone-700 shadow-inner">
             {icon}
         </div>
-        <h3 className="text-lg font-semibold text-charcoal mb-2 group-hover:text-amber-800 transition-colors duration-300">{title}</h3>
-        <p className="text-stone-500 text-sm leading-relaxed font-light">{desc}</p>
+        <h3 className="text-lg font-semibold text-charcoal dark:text-stone-100 mb-2 group-hover:text-amber-800 dark:group-hover:text-amber-400 transition-colors duration-300">{title}</h3>
+        <p className="text-stone-500 dark:text-stone-400 text-sm leading-relaxed font-light">{desc}</p>
     </motion.div>
 );
 
 const FeatureCard = ({ icon, title, tag, desc }) => (
     <motion.div
         whileHover={{ y: -5 }}
-        className="p-8 bg-white rounded-2xl shadow-sm hover:shadow-md border border-stone-150 transition-all flex flex-col justify-between h-full"
+        className="p-8 bg-white dark:bg-stone-900 rounded-2xl shadow-sm hover:shadow-md border border-stone-150 dark:border-stone-800 transition-all flex flex-col justify-between h-full"
     >
         <div>
-            <div className="w-12 h-12 bg-stone-50 rounded-xl flex items-center justify-center text-charcoal mb-6 border border-stone-100">
+            <div className="w-12 h-12 bg-stone-50 dark:bg-stone-800 rounded-xl flex items-center justify-center text-charcoal dark:text-stone-100 mb-6 border border-stone-100 dark:border-stone-700">
                 {icon}
             </div>
             <div className="flex items-center gap-2 mb-3">
-                <h3 className="text-lg font-semibold text-charcoal">{title}</h3>
-                <span className="px-2 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-600 font-medium">
+                <h3 className="text-lg font-semibold text-charcoal dark:text-stone-100">{title}</h3>
+                <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-[10px] font-mono text-stone-600 dark:text-stone-300 font-medium">
                     {tag}
                 </span>
             </div>
-            <p className="text-stone-500 text-sm leading-relaxed">{desc}</p>
+            <p className="text-stone-500 dark:text-stone-400 text-sm leading-relaxed">{desc}</p>
         </div>
     </motion.div>
 );

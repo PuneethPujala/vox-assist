@@ -12,5 +12,31 @@ export default defineConfig({
                 rewrite: (path) => path.replace(/^\/api/, '')
             }
         }
+    },
+    build: {
+        chunkSizeWarningLimit: 600,
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (id.includes('node_modules')) {
+                        if (id.includes('three') || id.includes('@react-three')) {
+                            return 'vendor-three';
+                        }
+                        if (id.includes('recharts') || id.includes('d3')) {
+                            return 'vendor-charts';
+                        }
+                        if (id.includes('framer-motion') || id.includes('gsap')) {
+                            return 'vendor-motion';
+                        }
+                        if (id.includes('firebase')) {
+                            return 'vendor-firebase';
+                        }
+                        if (id.includes('lucide-react')) {
+                            return 'vendor-icons';
+                        }
+                    }
+                }
+            }
+        }
     }
 })

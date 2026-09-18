@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import axios from 'axios';
+import api, { API_BASE_URL } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, Trash2, Edit2, Copy, MoreVertical, X, Check, LayoutTemplate } from 'lucide-react';
+import { Trash2, Edit2, Copy, X, Check, LayoutTemplate } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast, Toaster } from 'react-hot-toast';
 import { Skeleton } from '../components/ui/skeleton';
@@ -46,10 +46,7 @@ const YourDesigns = () => {
 
     const fetchMyDesigns = async () => {
         try {
-            const token = await currentUser.getIdToken();
-            const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/v1/my-designs`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get('/api/v1/my-designs');
             setDesigns(response.data);
         } catch (error) {
             console.error("Error fetching designs:", error);
@@ -62,11 +59,7 @@ const YourDesigns = () => {
     const handleDelete = async (id) => {
         if (!window.confirm("Are you sure you want to delete this design?")) return;
         try {
-            const token = await currentUser.getIdToken();
-            await axios.put(`${import.meta.env.VITE_API_URL}/api/v1/designs/${id}`,
-                { is_deleted: true },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            await api.put(`/api/v1/designs/${id}`, { is_deleted: true });
             toast.success("Design deleted");
             setDesigns(designs.filter(d => d._id !== id));
         } catch (error) {
@@ -77,10 +70,7 @@ const YourDesigns = () => {
     const handleDuplicate = async (id) => {
         toast.loading("Duplicating...", { id: 'dup' });
         try {
-            const token = await currentUser.getIdToken();
-            await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/designs/${id}/duplicate`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/api/v1/designs/${id}/duplicate`, {});
             toast.success("Design duplicated", { id: 'dup' });
             fetchMyDesigns();
         } catch (error) {
@@ -95,10 +85,8 @@ const YourDesigns = () => {
 
     const handleSaveEdit = async () => {
         try {
-            const token = await currentUser.getIdToken();
-            await axios.put(`${import.meta.env.VITE_API_URL}/api/v1/designs/${editingDesign._id}`,
-                { name: editForm.name, description: editForm.description },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put(`/api/v1/designs/${editingDesign._id}`,
+                { name: editForm.name, description: editForm.description }
             );
             toast.success("Design updated");
 
@@ -111,22 +99,24 @@ const YourDesigns = () => {
     };
 
     const handleCardMouseEnter = (e) => {
+        const isDark = document.documentElement.classList.contains('dark');
         gsap.to(e.currentTarget, {
             y: -5,
             scale: 1.015,
-            boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.08), 0 8px 15px -8px rgba(0, 0, 0, 0.04)',
-            borderColor: '#78716c',
+            boxShadow: isDark ? '0 15px 30px -10px rgba(0, 0, 0, 0.4)' : '0 15px 30px -10px rgba(0, 0, 0, 0.08), 0 8px 15px -8px rgba(0, 0, 0, 0.04)',
+            borderColor: isDark ? '#57534e' : '#78716c',
             duration: 0.35,
             ease: 'power2.out'
         });
     };
 
     const handleCardMouseLeave = (e) => {
+        const isDark = document.documentElement.classList.contains('dark');
         gsap.to(e.currentTarget, {
             y: 0,
             scale: 1,
-            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
-            borderColor: '#f5f5f4',
+            boxShadow: 'none',
+            borderColor: isDark ? '#292524' : '#e7e5e4',
             duration: 0.35,
             ease: 'power2.out'
         });
@@ -164,8 +154,8 @@ const YourDesigns = () => {
             <Toaster position="bottom-right" />
  
             <div ref={headerRef} className="flex justify-between items-center mb-8 max-w-7xl mx-auto opacity-0">
-                <h1 className="text-2xl font-light text-charcoal">My Projects</h1>
-                <div className="badge-premium bg-stone-50 text-stone-600 border border-stone-200/60 font-mono text-[10px]">
+                <h1 className="text-2xl font-light text-charcoal dark:text-stone-100">My Projects</h1>
+                <div className="badge-premium bg-stone-50 dark:bg-stone-850 text-stone-600 dark:text-stone-300 border border-stone-200/60 dark:border-stone-800 font-mono text-[10px]">
                     {designs.length} Saved Variations
                 </div>
             </div>
@@ -176,10 +166,10 @@ const YourDesigns = () => {
                         key={design._id || idx}
                         onMouseEnter={handleCardMouseEnter}
                         onMouseLeave={handleCardMouseLeave}
-                        className="bg-white/85 border border-stone-200/60 rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 relative group flex flex-col h-full opacity-0 overflow-hidden backdrop-blur-md cursor-pointer"
+                        className="bg-white/85 dark:bg-stone-900/85 border border-stone-200/60 dark:border-stone-800 rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-300 relative group flex flex-col h-full opacity-0 overflow-hidden backdrop-blur-md cursor-pointer"
                     >
                         {/* Thumbnail Generator/Blueprint Grid */}
-                        <div className="h-40 bg-[#fbfbf9] bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[size:16px_16px] flex flex-col items-center justify-center relative overflow-hidden border-b border-stone-150">
+                        <div className="h-40 bg-[#fbfbf9] dark:bg-stone-950 bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:16px_16px] flex flex-col items-center justify-center relative overflow-hidden border-b border-stone-150 dark:border-stone-800">
                             {design.spec_data?.rooms ? (
                                 <div className="flex gap-2 items-center justify-center w-full px-4 relative z-0">
                                     {design.spec_data.rooms.slice(0, 4).map((r, i) => (
@@ -199,14 +189,14 @@ const YourDesigns = () => {
                                     ))}
                                 </div>
                             ) : (
-                                <span className="text-stone-300 text-[10px] font-bold tracking-widest uppercase mb-2 font-mono">3D Mesh View</span>
+                                <span className="text-stone-300 dark:text-stone-600 text-[10px] font-bold tracking-widest uppercase mb-2 font-mono">3D Mesh View</span>
                             )}
  
                             {/* Hover Actions Overlay */}
-                            <div className="absolute inset-0 bg-white/90 opacity-0 group-hover:opacity-100 transition-all duration-250 flex items-center justify-center gap-2 backdrop-blur-sm">
+                            <div className="absolute inset-0 bg-white/90 dark:bg-stone-900/90 opacity-0 group-hover:opacity-100 transition-all duration-250 flex items-center justify-center gap-2 backdrop-blur-sm">
                                 {design.model_url && (
                                     <a
-                                        href={`${import.meta.env.VITE_API_URL}${design.model_url}`}
+                                        href={`${API_BASE_URL}${design.model_url}`}
                                         className="btn-primary text-xs"
                                         download
                                     >
@@ -223,7 +213,7 @@ const YourDesigns = () => {
                                 <button onClick={() => openEditModal(design)} className="icon-btn" title="Edit Details">
                                     <Edit2 size={13} />
                                 </button>
-                                <button onClick={() => handleDelete(design._id)} className="icon-btn hover:text-red-600 hover:bg-red-50" title="Delete">
+                                <button onClick={() => handleDelete(design._id)} className="icon-btn hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 dark:hover:text-red-400" title="Delete">
                                     <Trash2 size={13} />
                                 </button>
                             </div>
@@ -231,22 +221,22 @@ const YourDesigns = () => {
  
                         {/* Card Body */}
                         <div className="p-5 flex flex-col flex-1">
-                            <h3 className="font-semibold text-charcoal line-clamp-1 mb-1" title={design.name || design.prompt}>
+                            <h3 className="font-semibold text-charcoal dark:text-stone-100 line-clamp-1 mb-1" title={design.name || design.prompt}>
                                 {design.name || "Untitled Project"}
                             </h3>
  
-                            <p className="text-stone-500 text-xs line-clamp-2 mb-4 flex-1 font-sans font-light">
+                            <p className="text-stone-500 dark:text-stone-400 text-xs line-clamp-2 mb-4 flex-1 font-sans font-light">
                                 {design.description || design.prompt}
                             </p>
  
                             {/* Card Footer */}
-                            <div className="flex justify-between items-center text-[10px] font-mono text-stone-400 border-t border-stone-150 pt-3 mt-auto">
+                            <div className="flex justify-between items-center text-[10px] font-mono text-stone-400 dark:text-stone-500 border-t border-stone-150 dark:border-stone-800 pt-3 mt-auto">
                                 <span className="flex items-center gap-1 font-medium">
                                     {design.created_at ? formatDistanceToNow(new Date(design.created_at), { addSuffix: true }) : 'Recently'}
                                 </span>
  
-                                <div className="flex items-center gap-2 bg-stone-50 border border-stone-200/50 px-2 py-0.5 rounded-full">
-                                    <span className="text-stone-600 font-bold uppercase tracking-wider">
+                                <div className="flex items-center gap-2 bg-stone-50 dark:bg-stone-850 border border-stone-200/50 dark:border-stone-800 px-2 py-0.5 rounded-full">
+                                    <span className="text-stone-600 dark:text-stone-300 font-bold uppercase tracking-wider">
                                         {design.spec_data?.rooms?.length || 0} Rooms
                                     </span>
                                 </div>
@@ -256,12 +246,12 @@ const YourDesigns = () => {
                 ))}
  
                 {designs.length === 0 && (
-                    <div className="col-span-full py-20 flex flex-col items-center justify-center text-center glass-card border border-dashed border-stone-300/80 p-8">
-                        <div className="w-16 h-16 bg-stone-50/50 border border-stone-200/60 flex items-center justify-center rounded-2xl mb-4 text-stone-400 shadow-sm">
+                    <div className="col-span-full py-20 flex flex-col items-center justify-center text-center glass-card border border-dashed border-stone-300/80 dark:border-stone-700 p-8">
+                        <div className="w-16 h-16 bg-stone-50/50 dark:bg-stone-850/50 border border-stone-200/60 dark:border-stone-800 flex items-center justify-center rounded-2xl mb-4 text-stone-400 dark:text-stone-500 shadow-sm">
                             <LayoutTemplate size={28} />
                         </div>
-                        <h3 className="text-lg font-light text-charcoal mb-2">No projects compiled yet</h3>
-                        <p className="text-xs text-stone-500 mb-6 max-w-sm font-sans font-light">Start your layout architecture by running our dynamic layout wizard.</p>
+                        <h3 className="text-lg font-light text-charcoal dark:text-stone-100 mb-2">No projects compiled yet</h3>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mb-6 max-w-sm font-sans font-light">Start your layout architecture by running our dynamic layout wizard.</p>
                         <a href="/create" className="btn-primary">
                             Create New Project
                         </a>
@@ -274,22 +264,22 @@ const YourDesigns = () => {
                 {editingDesign && (
                     <motion.div
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+                        className="fixed inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
                     >
                         <motion.div
                             initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
-                            className="glass-card max-w-md w-full border border-stone-200 shadow-2xl"
+                            className="glass-card max-w-md w-full border border-stone-200 dark:border-stone-800 shadow-2xl bg-white dark:bg-stone-900"
                         >
                             <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-light text-charcoal">Edit Project Details</h3>
-                                <button onClick={() => setEditingDesign(null)} className="text-stone-400 hover:text-stone-600">
+                                <h3 className="text-lg font-light text-charcoal dark:text-stone-100">Edit Project Details</h3>
+                                <button onClick={() => setEditingDesign(null)} className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200">
                                     <X size={18} />
                                 </button>
                             </div>
  
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-stone-600 mb-2">Project Name</label>
+                                    <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-2">Project Name</label>
                                     <input
                                         type="text"
                                         value={editForm.name}
@@ -299,7 +289,7 @@ const YourDesigns = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-stone-600 mb-2">Description (Optional)</label>
+                                    <label className="block text-xs font-bold text-stone-600 dark:text-stone-300 mb-2">Description (Optional)</label>
                                     <textarea
                                         value={editForm.description}
                                         onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}

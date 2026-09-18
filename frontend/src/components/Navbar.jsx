@@ -7,13 +7,13 @@ import { ThemeToggle } from './ThemeToggle';
 
 const NavLink = ({ to, active, children }) => (
     <Link to={to} className="relative py-1 group">
-        <span className={`text-sm font-medium transition-colors ${active ? 'text-charcoal' : 'text-stone-500 group-hover:text-charcoal'}`}>
+        <span className={`text-sm font-medium transition-colors ${active ? 'text-charcoal dark:text-stone-100' : 'text-stone-500 hover:text-charcoal dark:text-stone-400 dark:hover:text-stone-100'}`}>
             {children}
         </span>
         {active && (
             <motion.div
                 layoutId="underline"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-charcoal"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900 dark:bg-stone-100"
             />
         )}
     </Link>
@@ -26,9 +26,9 @@ const Navbar = () => {
     const isActive = (path) => location.pathname === path;
 
     return (
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-stone-200 h-16">
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-stone-950/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 h-16 transition-colors duration-200">
             <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
-                <Link to="/" className="text-2xl font-light tracking-tighter text-charcoal">
+                <Link to="/" className="text-2xl font-light tracking-tighter text-charcoal dark:text-stone-100">
                     VOX<span className="font-semibold">ASSIST</span>
                 </Link>
 
@@ -43,21 +43,21 @@ const Navbar = () => {
                     <ThemeToggle />
                     {currentUser ? (
                         <div className="flex items-center space-x-4">
-                            <span className="text-sm text-stone-500 hidden sm:inline">{currentUser.email}</span>
+                            <span className="text-sm text-stone-500 dark:text-stone-400 hidden sm:inline">{currentUser.email}</span>
                             <button
                                 onClick={() => auth.signOut()}
-                                className="px-4 py-2 text-sm font-medium text-stone-600 hover:text-charcoal transition-colors"
+                                className="px-4 py-2 text-sm font-medium text-stone-600 hover:text-charcoal dark:text-stone-400 dark:hover:text-stone-100 transition-colors"
                             >
                                 Sign Out
                             </button>
-                            <Link to="/profile" className="w-8 h-8 rounded-full bg-charcoal text-cream flex items-center justify-center text-xs border border-stone-200">
+                            <Link to="/profile" className="w-8 h-8 rounded-full bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 flex items-center justify-center text-xs border border-stone-200 dark:border-stone-700">
                                 {currentUser.email ? currentUser.email[0].toUpperCase() : 'U'}
                             </Link>
                         </div>
                     ) : (
                         <Link
                             to="/login"
-                            className="px-6 py-2 bg-charcoal text-cream rounded-full text-sm font-medium hover:bg-stone-800 transition-colors"
+                            className="px-6 py-2 bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-900 rounded-full text-sm font-medium hover:bg-stone-800 dark:hover:bg-white transition-colors"
                         >
                             Sign In
                         </Link>
