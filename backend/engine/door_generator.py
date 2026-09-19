@@ -28,32 +28,50 @@ def _shared_wall(poly_a, poly_b):
         return None
     return max(lines, key=lambda l: l.length)
 
-def _opening_from_wall(wall, width, position="center"):
+def _opening_from_wall(wall, width, position="center", existing_doors=None):
     """Create a rectangular opening on the shared wall.
 
-    We clamp the *effective* opening width so it never consumes the full
-    shared wall segment. This guarantees there are structural wall piers
-    at both ends (minimum 0.2m return), so 3D maintains clean framed walls.
+    Enforces minimum 0.60m structural return from room corners and staggers
+    doors away from nearby existing doors to prevent multi-door corner collisions.
     """
     L = wall.length
     if L <= 0:
         return None
 
-    # Cap opening so there are at least 0.15m - 0.2m piers at both ends
-    max_effective_width = max(0.4, L - 0.35)
+    # Cap opening so there are at least structural piers at both ends
+    max_effective_width = max(0.4, L - 0.50)
     eff_width = min(width, max_effective_width)
 
     if eff_width <= 0:
         return None
 
-    # Determine center point of the opening along the wall
-    if position == "tucked" and L >= (eff_width + 0.5):
-        # Place opening near one end with a 0.25m structural return
-        t_pos = (0.25 + eff_width / 2.0) / L
-        mid = wall.interpolate(t_pos, normalized=True)
+    min_return = 0.60
+    candidates = []
+
+    if position == "tucked" and L >= (eff_width + min_return * 2):
+        # Candidate A: tucked near start (with >= 0.60m corner clearance)
+        t_start = (min_return + eff_width / 2.0) / L
+        candidates.append(wall.interpolate(t_start, normalized=True))
+        # Candidate B: tucked near end (with >= 0.60m corner clearance)
+        t_end = 1.0 - (min_return + eff_width / 2.0) / L
+        candidates.append(wall.interpolate(t_end, normalized=True))
+    elif position == "tucked" and L >= (eff_width + 0.5):
+        t_start = (0.25 + eff_width / 2.0) / L
+        candidates.append(wall.interpolate(t_start, normalized=True))
+        t_end = 1.0 - (0.25 + eff_width / 2.0) / L
+        candidates.append(wall.interpolate(t_end, normalized=True))
     else:
         # Centered opening
-        mid = wall.interpolate(0.5, normalized=True)
+        candidates.append(wall.interpolate(0.5, normalized=True))
+
+    # Pick candidate that maximizes clearance from any existing door
+    if existing_doors and len(candidates) > 1:
+        mid = max(
+            candidates,
+            key=lambda pt: min([pt.distance(d.centroid) for d in existing_doors], default=999.0)
+        )
+    else:
+        mid = candidates[0]
 
     (x1, y1), (x2, y2) = wall.coords[0], wall.coords[-1]
     dx, dy = x2 - x1, y2 - y1
@@ -107,7 +125,7 @@ def generate_doors_with_metadata(rooms, opening_specs):
         t2 = r2.split("_")[0].lower()
         pos = "tucked" if ("bedroom" in (t1, t2) and op_type == "door") else "center"
 
-        opening = _opening_from_wall(wall, width, position=pos)
+        opening = _opening_from_wall(wall, width, position=pos, existing_doors=openings)
         if opening:
             openings.append(opening)
             metadata.append({

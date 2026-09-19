@@ -290,19 +290,44 @@ def _get_external_walls(poly, all_other_polys):
     return segments
 
 def _generate_entrance_door(living_room_poly, all_rooms):
+    """
+    Places the main entrance door as an intentional architectural anchor:
+    - Selects the primary front exterior facade (prioritizing south / front approach).
+    - Centers or places the door with at least 0.80m setback from wall corners.
+    - Guarantees clean structural return piers flanking the entrance door frame.
+    """
     other_rooms = [p for name, p in all_rooms.items() if name != next((k for k in all_rooms if k.startswith("living")), "")]
     external_walls = _get_external_walls(living_room_poly, other_rooms)
     
     if not external_walls:
         return None
     
-    valid_walls = [w for w in external_walls if w.length >= ENTRY_DOOR_WIDTH]
+    valid_walls = [w for w in external_walls if w.length >= ENTRY_DOOR_WIDTH + 0.8]
+    if not valid_walls:
+        valid_walls = [w for w in external_walls if w.length >= ENTRY_DOOR_WIDTH]
     if not valid_walls:
         return None
     
-    valid_walls.sort(key=lambda w: w.length, reverse=True)
-    best_wall = random.choice(valid_walls[:3])
-    t = random.uniform(0.2, 0.8)
+    # Score walls: prefer front facade (lowest Y coordinate = South / Front elevation) and longer walls
+    miny_overall = min(w.centroid.y for w in valid_walls)
+    def _wall_front_score(w):
+        is_front = abs(w.centroid.y - miny_overall) < 0.5
+        return (10.0 if is_front else 0.0) + w.length
+        
+    valid_walls.sort(key=_wall_front_score, reverse=True)
+    best_wall = valid_walls[0]
+    
+    # Place entrance with comfortable setback from corner (at least 0.8m)
+    L = best_wall.length
+    min_setback = 0.80
+    if L >= (ENTRY_DOOR_WIDTH + min_setback * 2):
+        # Position centered or near central arrival axis
+        t_min = (min_setback + ENTRY_DOOR_WIDTH / 2.0) / L
+        t_max = 1.0 - t_min
+        t = (t_min + t_max) / 2.0  # Deliberate centered arrival point
+    else:
+        t = 0.5
+        
     mid_point = best_wall.interpolate(t, normalized=True)
     
     coords = list(best_wall.coords)

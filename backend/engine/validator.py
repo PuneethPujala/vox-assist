@@ -19,6 +19,7 @@ try:
         validate_window_daylighting,
         validate_room_door_accessibility,
     )
+    from constraints.circulation import validate_circulation_continuity
 except ImportError:
     from engine.constraints.jurisdiction_profiles import get_profile
     from engine.constraints.envelope import validate_envelope_containment, compute_building_envelope
@@ -32,6 +33,7 @@ except ImportError:
         validate_window_daylighting,
         validate_room_door_accessibility,
     )
+    from engine.constraints.circulation import validate_circulation_continuity
 
 class LayoutValidator:
     @staticmethod
@@ -251,6 +253,15 @@ class LayoutValidator:
                 circ_details = focal_res["details"]
             elif len(bedrooms) > 1:
                 circ_details = f"{len(bedrooms)} bedrooms properly isolated from service entries; living room accommodates focal media wall"
+
+            if openings:
+                cont_res = validate_circulation_continuity(active_rooms, openings, entrance)
+                if not cont_res["valid"]:
+                    warnings.append(cont_res["details"])
+                    circ_details = cont_res["details"]
+                    circulation_pass = False
+                elif circ_details == "Public living core connects directly to functional zones":
+                    circ_details = cont_res["details"]
             
         checks.append({
             "id": "circulation",

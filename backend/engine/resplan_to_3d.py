@@ -7,6 +7,14 @@ from collections import defaultdict
 import open3d as o3d
 import os
 
+try:
+    from constraints.circulation import compute_protected_circulation_polygon
+except ImportError:
+    try:
+        from engine.constraints.circulation import compute_protected_circulation_polygon
+    except ImportError:
+        compute_protected_circulation_polygon = None
+
 # =========================
 # REALISTIC HOUSE CONFIG
 # =========================
@@ -257,7 +265,7 @@ def add_box_to_faces(all_faces, x1, x2, y1, y2, z1, z2, color, alpha=1.0):
     all_faces.append({"vertices": [c100, c110, c111, c101], "color": color, "alpha": alpha})
 
 
-def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None):
+def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None, protected_circ_poly=None, openings=None):
     if poly.is_empty: return
     
     # Bounding box and dimensions
@@ -356,17 +364,88 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
 
         # Integrated Dining Zone if spacious and no separate dining room
         has_dining_room = any("dining" in r.lower() for r in all_rooms.keys())
-        if not has_dining_room and (w * h >= 16.0 or max(w, h) >= 4.8):
-            dx = minx + 1.2 * scale if best_wall == "east" else maxx - 1.2 * scale
-            dy = miny + 1.2 * scale if best_wall == "north" else maxy - 1.2 * scale
+        if not has_dining_room and (w * h >= 16.0 or max(w, h) >= 4.6):
             dtw, dth = 0.6 * scale, 0.4 * scale
-            add_box_to_faces(all_faces, dx - dtw, dx + dtw, dy - dth, dy + dth, FLOOR_THICKNESS + 0.72 * scale, FLOOR_THICKNESS + 0.76 * scale, "#8D6E63")
-            for lx in [-dtw + 0.05*scale, dtw - 0.05*scale]:
-                for ly in [-dth + 0.05*scale, dth - 0.05*scale]:
-                    add_box_to_faces(all_faces, dx + lx - 0.02*scale, dx + lx + 0.02*scale, dy + ly - 0.02*scale, dy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.72*scale, "#5D4037")
-            for ox in [-dtw * 0.6, dtw * 0.6]:
-                for oy in [-dth - 0.25 * scale, dth + 0.25 * scale]:
-                    add_box_to_faces(all_faces, dx + ox - 0.12*scale, dx + ox + 0.12*scale, dy + oy - 0.12*scale, dy + oy + 0.12*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42*scale, "#475569")
+            pullout = 0.60
+            
+            # Find kitchen connection if any
+            kitchen_pos = None
+            if openings:
+                for op in openings:
+                    pair = op.get("rooms", ())
+                    if any("kitchen" in str(r).lower() for r in pair) and any("living" in str(r).lower() for r in pair):
+                        op_p = op.get("polygon")
+                        if op_p:
+                            kitchen_pos = op_p.centroid
+                            break
+
+            # Generate candidate dining positions across available quadrants of the living room
+            candidate_positions = []
+            x_steps = [minx + dtw + 0.6, cx - dtw - 0.2, cx + dtw + 0.2, maxx - dtw - 0.6]
+            y_steps = [miny + dth + 0.6, cy - dth - 0.2, cy + dth + 0.2, maxy - dth - 0.6]
+            
+            for cx_cand in x_steps:
+                for cy_cand in y_steps:
+                    if (minx + dtw + 0.2) <= cx_cand <= (maxx - dtw - 0.2) and (miny + dth + 0.2) <= cy_cand <= (maxy - dth - 0.2):
+                        candidate_positions.append((cx_cand, cy_cand))
+
+            # Filter & score candidates against protected circulation
+            valid_candidates = []
+            for cx_cand, cy_cand in candidate_positions:
+                t_box = box(cx_cand - dtw, cy_cand - dth, cx_cand + dtw, cy_cand + dth)
+                env = box(cx_cand - dtw - pullout, cy_cand - dth - pullout, cx_cand + dtw + pullout, cy_cand + dth + pullout)
+                
+                # Must stay inside room
+                if not poly.contains(t_box):
+                    continue
+                    
+                # Conflict with TV / Sofa area
+                if best_wall in ["south", "north"]:
+                    if abs(cy_cand - sofa_y) < 1.0 or abs(cy_cand - tv_y) < 1.0:
+                        continue
+                else:
+                    if abs(cx_cand - sofa_x) < 1.0 or abs(cx_cand - tv_x) < 1.0:
+                        continue
+                
+                # Check intersection with protected circulation
+                inter_area = 0.0
+                hard_conflict = False
+                if protected_circ_poly and not protected_circ_poly.is_empty:
+                    if t_box.intersects(protected_circ_poly):
+                        hard_conflict = True
+                    inter = env.intersection(protected_circ_poly)
+                    inter_area = inter.area if not inter.is_empty else 0.0
+
+                if hard_conflict:
+                    continue
+
+                min_door_dist = 999.0
+                if door_polys:
+                    min_door_dist = min(t_box.distance(dp) for dp in door_polys)
+                
+                kitchen_score = 0.0
+                if kitchen_pos:
+                    dist_k = ((cx_cand - kitchen_pos.x)**2 + (cy_cand - kitchen_pos.y)**2)**0.5
+                    kitchen_score = -dist_k * 2.0
+                
+                score = (-inter_area * 100.0) + (min_door_dist * 5.0) + kitchen_score
+                valid_candidates.append((score, cx_cand, cy_cand, inter_area, min_door_dist))
+
+            if valid_candidates:
+                valid_candidates.sort(key=lambda x: x[0], reverse=True)
+                best_cand = valid_candidates[0]
+                dx, dy = best_cand[1], best_cand[2]
+
+                # Render Dining Table
+                add_box_to_faces(all_faces, dx - dtw, dx + dtw, dy - dth, dy + dth, FLOOR_THICKNESS + 0.72 * scale, FLOOR_THICKNESS + 0.76 * scale, "#8D6E63")
+                # Table Legs
+                for lx in [-dtw + 0.05*scale, dtw - 0.05*scale]:
+                    for ly in [-dth + 0.05*scale, dth - 0.05*scale]:
+                        add_box_to_faces(all_faces, dx + lx - 0.02*scale, dx + lx + 0.02*scale, dy + ly - 0.02*scale, dy + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.72*scale, "#5D4037")
+                # Dining Chairs
+                for ox in [-dtw * 0.6, dtw * 0.6]:
+                    for oy in [-dth - 0.25 * scale, dth + 0.25 * scale]:
+                        add_box_to_faces(all_faces, dx + ox - 0.12*scale, dx + ox + 0.12*scale, dy + oy - 0.12*scale, dy + oy + 0.12*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42*scale, "#475569")
                 
     elif "bedroom" in name or "bed" in name:
         # Detect door locations on bedroom boundaries to avoid placing bed/wardrobe on door cuts
@@ -596,11 +675,15 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
     # 2. Build Floor Geometry
     all_faces = []
     
-    # Create Ground Plane (Context) - REMOVED per user request
-    # ground_poly = box(-10, -10, 30, 30) 
-    # ground_faces = _extrude_polygon_to_3d(ground_poly, -0.1, -0.01)
-    # for face in ground_faces:
-    #     all_faces.append({"vertices": face, "color": GROUND_COLOR, "alpha": 1.0})
+    # Compute Protected Circulation Polygon
+    openings = layout.get("openings", [])
+    entrance_geom = layout.get("entrance", None)
+    protected_circ = None
+    if compute_protected_circulation_polygon:
+        try:
+            protected_circ = compute_protected_circulation_polygon(rooms, openings, entrance_geom)
+        except Exception as e:
+            print(f"⚠️ Circulation polygon calculation: {e}")
 
     # Create Room Floors
     print(" Building floors...")
@@ -612,8 +695,33 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
         for f in faces:
             all_faces.append({"vertices": f, "color": color, "alpha": 0.9})
             
-        # Add 3D Furniture blocks
-        _place_room_furniture(all_faces, name.lower(), poly, door_polygons, all_rooms=rooms)
+        # Add 3D Furniture blocks (constrained by protected circulation)
+        _place_room_furniture(all_faces, name.lower(), poly, door_polygons, all_rooms=rooms, protected_circ_poly=protected_circ, openings=openings)
+
+    # Add Foyer Mat / Welcome Tile Inlay directly inside Entrance Door
+    if entrance_geom and not entrance_geom.is_empty:
+        try:
+            ecx, ecy = entrance_geom.centroid.x, entrance_geom.centroid.y
+            for r_name, r_poly in rooms.items():
+                if ("living" in r_name.lower() or "hall" in r_name.lower() or "foyer" in r_name.lower()) and r_poly.buffer(0.35).contains(Point(ecx, ecy)):
+                    rcx, rcy = r_poly.centroid.x, r_poly.centroid.y
+                    vx, vy = rcx - ecx, rcy - ecy
+                    vlen = (vx**2 + vy**2)**0.5
+                    if vlen > 0:
+                        ux, uy = vx / vlen, vy / vlen
+                        mcx, mcy = ecx + ux * 0.60, ecy + uy * 0.60
+                        mw, mh = 1.10, 0.80
+                        mat_box = box(mcx - mw/2.0, mcy - mh/2.0, mcx + mw/2.0, mcy + mh/2.0).intersection(r_poly)
+                        if not mat_box.is_empty and isinstance(mat_box, Polygon):
+                            add_box_to_faces(
+                                all_faces,
+                                mat_box.bounds[0], mat_box.bounds[2],
+                                mat_box.bounds[1], mat_box.bounds[3],
+                                FLOOR_THICKNESS + 0.003, FLOOR_THICKNESS + 0.015,
+                                "#334155"
+                            )
+        except Exception as e:
+            print(f"⚠️ Foyer mat generation: {e}")
 
     # 3. Build Wall Topology
     print(" Building wall topology...")
@@ -788,7 +896,14 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                                     c4 = center + wall_dir * d_half_width - perp_dir * d_half_thick
                                     
                                     door_poly = Polygon([tuple(c1), tuple(c2), tuple(c3), tuple(c4)])
-                                    generated_door_panels.append(door_poly)
+                                    generated_door_panels.append({
+                                        "poly": door_poly,
+                                        "is_exterior": is_exterior,
+                                        "center": center,
+                                        "wall_dir": wall_dir,
+                                        "perp_dir": perp_dir,
+                                        "width": ilen
+                                    })
 
                         diff = seg.difference(door_shape)
                         if not diff.is_empty:
@@ -809,12 +924,28 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
 
     # 5. Generate Doors (Use Wall-Aligned Panels)
     print(" Generating doors...")
-    for door in generated_door_panels:
+    for d_item in generated_door_panels:
+        door = d_item["poly"] if isinstance(d_item, dict) else d_item
         if door.is_empty: continue
-        # Thinner panel
+        is_front = d_item.get("is_exterior", False) if isinstance(d_item, dict) else False
+        p_color = "#1E293B" if is_front else DOOR_PANEL_COLOR
         d_faces = _extrude_polygon_vertical_shell(door, FLOOR_THICKNESS, FLOOR_THICKNESS + DOOR_HEIGHT)
         for f in d_faces:
-            all_faces.append({"vertices": f, "color": DOOR_PANEL_COLOR, "alpha": 1.0})
+            all_faces.append({"vertices": f, "color": p_color, "alpha": 1.0})
+            
+        if is_front and isinstance(d_item, dict):
+            d_center = d_item["center"]
+            d_wall_dir = d_item["wall_dir"]
+            d_perp_dir = d_item["perp_dir"]
+            w_half = d_item["width"] / 2.0
+            h_pt = d_center + d_wall_dir * (w_half * 0.6) + d_perp_dir * 0.05
+            add_box_to_faces(
+                all_faces,
+                h_pt[0] - 0.02, h_pt[0] + 0.02,
+                h_pt[1] - 0.02, h_pt[1] + 0.02,
+                FLOOR_THICKNESS + 0.85, FLOOR_THICKNESS + 1.25,
+                "#E2E8F0"
+            )
 
     # 6. Render Mesh
     print(" Rendering Mesh...")
