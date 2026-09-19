@@ -17,6 +17,7 @@ try:
         validate_bathroom_single_access,
         validate_living_focal_orientation,
         validate_window_daylighting,
+        validate_room_door_accessibility,
     )
 except ImportError:
     from engine.constraints.jurisdiction_profiles import get_profile
@@ -29,6 +30,7 @@ except ImportError:
         validate_bathroom_single_access,
         validate_living_focal_orientation,
         validate_window_daylighting,
+        validate_room_door_accessibility,
     )
 
 class LayoutValidator:
@@ -199,18 +201,28 @@ class LayoutValidator:
         door_status = "pass"
         door_details = "Code-compliant main entrance and interior door openings placed"
         
-        # Test bathroom single access constraint
+        # 1. Test bathroom single access constraint
         bath_access = validate_bathroom_single_access(active_rooms, doors if doors is not None else openings)
         if not bath_access["valid"]:
             door_status = "fail"
             door_details = f"{len(bath_access['violations'])} pass-through bathroom(s) detected: multiple entrances compromise privacy"
             violations.extend(bath_access["violations"])
-        elif ("doors" in layout or "entrance" in layout) and not entrance and len(active_rooms) > 1:
-            door_status = "warn"
-            door_details = "Layout lacks a designated exterior entry door"
-            warnings.append(door_details)
-        elif entrance:
-            door_details = "Main entrance placed on exterior wall; single private access for all bathrooms"
+            
+        # 2. Test room door accessibility (no landlocked rooms, solitary bath common access)
+        if doors is not None or openings or "doors" in layout or "openings" in layout:
+            access_res = validate_room_door_accessibility(active_rooms, doors_input=doors, openings=openings)
+            if not access_res["valid"]:
+                door_status = "fail"
+                door_details = access_res["details"]
+                violations.extend(access_res["violations"])
+
+        if door_status == "pass":
+            if ("doors" in layout or "entrance" in layout or "openings" in layout) and not entrance and len(active_rooms) > 1:
+                door_status = "warn"
+                door_details = "Layout lacks a designated exterior entry door"
+                warnings.append(door_details)
+            elif entrance:
+                door_details = "Main entrance placed on exterior wall; direct circulation access for all rooms with single private bathroom entries"
             
         checks.append({
             "id": "doors",

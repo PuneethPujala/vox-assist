@@ -21,6 +21,7 @@ from engine.constraints.human_usability import (
     validate_bathroom_single_access,
     validate_living_focal_orientation,
     validate_window_daylighting,
+    validate_room_door_accessibility,
 )
 from engine.door_generator import (
     INTERIOR_DOOR_WIDTH,
@@ -38,16 +39,19 @@ from engine.resplan_to_3d import build_house_from_layout
 
 def test_no_passthrough_bathrooms_pruning():
     """
-    Asserts that when a bathroom touches multiple rooms (e.g. Bedroom 1 and Living),
-    topological door filtering strictly prunes the connection to living,
-    preserving private ensuite access and preventing pass-through circulation.
+    Asserts that:
+    1. A solitary bathroom touching both Bedroom 1 and Living is designated as a Common Bathroom
+       connected to Living/circulation, so all occupants can access it without entering someone's bedroom.
+    2. In a multi-bathroom home, the master bath connects as an ensuite to Bedroom 1, while other
+       baths connect to common circulation.
+    3. In all cases, pass-through bathrooms (dual entrances) are strictly pruned to 1 door.
     """
+    # Case 1: Solitary bathroom (1 bath total)
     rooms = {
         "living": box(0, 0, 6, 5),
         "bedroom_1": box(6, 0, 10, 5),
         "bathroom_1": box(6, 5, 8, 8),
     }
-    # Raw adjacencies where bathroom_1 touches both living and bedroom_1
     valid_adjacency = [
         ("living", "bedroom_1"),
         ("living", "bathroom_1"),
@@ -55,13 +59,31 @@ def test_no_passthrough_bathrooms_pruning():
     ]
     
     filtered = _filter_topological_doors(valid_adjacency, rooms)
-    
-    # Check that bathroom_1 only appears ONCE in filtered adjacencies
     b_pairs = [p for p in filtered if "bathroom_1" in p]
     assert len(b_pairs) == 1, f"Expected exactly 1 door for bathroom_1, got {b_pairs}"
-    # Must be connected to the bedroom (ensuite), not living
-    assert "bedroom_1" in b_pairs[0], "Bathroom should prioritize ensuite bedroom connection"
-    assert "living" not in b_pairs[0] or "bedroom_1" in b_pairs[0]
+    # Must be connected to the living room (common circulation), not trapped as ensuite
+    assert "living" in b_pairs[0], f"Solitary bathroom should connect to living, got {b_pairs[0]}"
+
+    # Case 2: Multi-bathroom (2 baths total)
+    multi_rooms = {
+        "living": box(0, 0, 6, 5),
+        "bedroom_1": box(6, 0, 10, 5),
+        "bathroom_1": box(6, 5, 8, 8),
+        "bathroom_2": box(0, 5, 2, 7),
+    }
+    multi_adj = [
+        ("living", "bedroom_1"),
+        ("living", "bathroom_1"),
+        ("bedroom_1", "bathroom_1"),
+        ("living", "bathroom_2"),
+    ]
+    multi_filtered = _filter_topological_doors(multi_adj, multi_rooms)
+    b1_pairs = [p for p in multi_filtered if "bathroom_1" in p]
+    b2_pairs = [p for p in multi_filtered if "bathroom_2" in p]
+    assert len(b1_pairs) == 1, "Ensuite bathroom_1 must have exactly 1 door"
+    assert len(b2_pairs) == 1, "Common bathroom_2 must have exactly 1 door"
+    assert "bedroom_1" in b1_pairs[0], "First bathroom in multi-bath home serves as master ensuite"
+    assert "living" in b2_pairs[0], "Second bathroom serves common living area"
 
 def test_bathroom_single_access_validator():
     """
@@ -143,3 +165,49 @@ def test_3d_house_generation_with_windows_and_cased_openings(tmp_path):
     assert len(mesh.vertices) > 100
     assert len(mesh.triangles) > 50
     assert os.path.exists(output_file)
+
+def test_validate_room_door_accessibility():
+    """
+    Asserts that validate_room_door_accessibility detects:
+    1. Fully connected layouts where every room has a doorway.
+    2. Landlocked rooms with 0 doorways.
+    3. Solitary bathrooms trapped as ensuites.
+    """
+    rooms = {
+        "living": box(0, 0, 6, 5),
+        "bedroom_1": box(6, 0, 10, 5),
+        "bedroom_2": box(0, 5, 5, 9),
+        "bathroom_1": box(6, 5, 8, 8),
+    }
+
+    # Case 1: Fully connected layout
+    openings_ok = [
+        {"rooms": ("living", "bedroom_1")},
+        {"rooms": ("living", "bedroom_2")},
+        {"rooms": ("living", "bathroom_1")},
+    ]
+    res_ok = validate_room_door_accessibility(rooms, openings=openings_ok)
+    assert res_ok["valid"] is True
+    assert res_ok["status"] == "pass"
+    assert len(res_ok["landlocked_rooms"]) == 0
+
+    # Case 2: Landlocked bedroom_2 (no doorway)
+    openings_landlocked = [
+        {"rooms": ("living", "bedroom_1")},
+        {"rooms": ("living", "bathroom_1")},
+    ]
+    res_ll = validate_room_door_accessibility(rooms, openings=openings_landlocked)
+    assert res_ll["valid"] is False
+    assert res_ll["status"] == "fail"
+    assert "bedroom_2" in res_ll["landlocked_rooms"]
+
+    # Case 3: Solitary bathroom trapped as ensuite to bedroom_1
+    openings_ensuite_trap = [
+        {"rooms": ("living", "bedroom_1")},
+        {"rooms": ("living", "bedroom_2")},
+        {"rooms": ("bedroom_1", "bathroom_1")},
+    ]
+    res_trap = validate_room_door_accessibility(rooms, openings=openings_ensuite_trap)
+    assert res_trap["valid"] is False
+    assert any("isolated as an ensuite" in v for v in res_trap["violations"])
+

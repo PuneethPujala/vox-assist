@@ -369,41 +369,82 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
                     add_box_to_faces(all_faces, dx + ox - 0.12*scale, dx + ox + 0.12*scale, dy + oy - 0.12*scale, dy + oy + 0.12*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42*scale, "#475569")
                 
     elif "bedroom" in name or "bed" in name:
-        # Double Bed with Padded Headboard against solid wall
-        bw, bh = 0.8 * scale, 0.95 * scale
-        bed_cx = cx
-        bed_cy = miny + bh + 0.25 * scale
-        
-        # Padded Headboard against wall
-        add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, miny + 0.08, miny + 0.18*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
-        # Mattress
-        add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, miny + 0.18*scale, miny + 0.18*scale + 1.7*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
-        # Pillows
-        add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, miny + 0.22*scale, miny + 0.52*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-        add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, miny + 0.22*scale, miny + 0.52*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-        
-        # Bedside Nightstands flanking bed with lamps
-        for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
-            add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, miny + 0.12, miny + 0.48*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
-            add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, miny + 0.22*scale, miny + 0.32*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
-            
-        # Wardrobe Closet along side wall (depth 0.6m, height 2.2m)
-        if w >= 2.8:
-            add_box_to_faces(all_faces, maxx - 0.62, maxx - 0.05, cy - 0.7*scale, cy + 0.7*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 2.2 * scale, "#5D4037")
-        
-    elif "bathroom" in name or "bath" in name or "toilet" in name:
-        # Modern Bathroom Suite: Vanity, Toilet, and Shower/Tub
-        door_near_top = False
+        # Detect door locations on bedroom boundaries to avoid placing bed/wardrobe on door cuts
+        door_on_miny = False
+        door_on_maxy = False
+        door_on_maxx = False
+        door_on_minx = False
         if door_polys:
             for door in door_polys:
                 if door.intersects(poly.buffer(0.15)):
-                    dy = door.centroid.y
-                    if abs(dy - maxy) < abs(dy - miny):
-                        door_near_top = True
+                    dx, dy = door.centroid.x, door.centroid.y
+                    dists = {"miny": abs(dy - miny), "maxy": abs(dy - maxy), "minx": abs(dx - minx), "maxx": abs(dx - maxx)}
+                    closest = min(dists, key=dists.get)
+                    if closest == "miny": door_on_miny = True
+                    elif closest == "maxy": door_on_maxy = True
+                    elif closest == "minx": door_on_minx = True
+                    elif closest == "maxx": door_on_maxx = True
 
+        bw, bh = 0.8 * scale, 0.95 * scale
+        bed_cx = cx
+        
+        # If door is on south wall, place bed headboard against north wall
+        if door_on_miny and not door_on_maxy:
+            head_y1 = maxy - 0.18 * scale
+            head_y2 = maxy - 0.08
+            mat_y1 = maxy - 0.18 * scale - 1.7 * scale
+            mat_y2 = maxy - 0.18 * scale
+            pil_y1 = maxy - 0.52 * scale
+            pil_y2 = maxy - 0.22 * scale
+            night_y1 = maxy - 0.48 * scale
+            night_y2 = maxy - 0.12
+        else:
+            head_y1 = miny + 0.08
+            head_y2 = miny + 0.18 * scale
+            mat_y1 = miny + 0.18 * scale
+            mat_y2 = miny + 0.18 * scale + 1.7 * scale
+            pil_y1 = miny + 0.22 * scale
+            pil_y2 = miny + 0.52 * scale
+            night_y1 = miny + 0.12
+            night_y2 = miny + 0.48 * scale
+
+        # Padded Headboard against wall
+        add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, head_y1, head_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
+        # Mattress
+        add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, mat_y1, mat_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
+        # Pillows
+        add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+        add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+        
+        # Bedside Nightstands flanking bed with lamps
+        for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
+            add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, night_y1, night_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
+            add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, (night_y1 + night_y2)/2 - 0.05*scale, (night_y1 + night_y2)/2 + 0.05*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
+            
+        # Wardrobe Closet along side wall (depth 0.6m, height 2.2m)
+        # Avoid placing wardrobe on a wall cut by a door
+        if w >= 2.8:
+            wardrobe_on_left = door_on_maxx and not door_on_minx
+            wx1 = minx + 0.05 if wardrobe_on_left else maxx - 0.62
+            wx2 = minx + 0.62 if wardrobe_on_left else maxx - 0.05
+            add_box_to_faces(all_faces, wx1, wx2, cy - 0.7*scale, cy + 0.7*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 2.2 * scale, "#5D4037")
+        
+    elif "bathroom" in name or "bath" in name or "toilet" in name:
+        # Modern Bathroom Suite: Vanity, Toilet, and Shower/Tub
+        door_closest = "bottom"
+        if door_polys:
+            for door in door_polys:
+                if door.intersects(poly.buffer(0.15)):
+                    dx, dy = door.centroid.x, door.centroid.y
+                    dists = {"top": abs(dy - maxy), "bottom": abs(dy - miny), "left": abs(dx - minx), "right": abs(dx - maxx)}
+                    door_closest = min(dists, key=dists.get)
+
+        door_near_top = (door_closest == "top")
+        door_near_right = (door_closest == "right")
+        
         fix_y = miny + 0.15 if door_near_top else maxy - 0.55
         
-        # 1. Floating Vanity Unit with Basin & Mirror
+        # 1. Floating Vanity Unit with Basin & Mirror (placed along back/fixture wall)
         vx = minx + 0.15
         add_box_to_faces(all_faces, vx, vx + 0.7 * scale, fix_y, fix_y + 0.45 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.82 * scale, "#8D6E63")
         add_box_to_faces(all_faces, vx + 0.1*scale, vx + 0.6*scale, fix_y + 0.05*scale, fix_y + 0.4*scale, FLOOR_THICKNESS + 0.82*scale, FLOOR_THICKNESS + 0.87*scale, "#FFFFFF")
@@ -419,9 +460,16 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
         add_box_to_faces(all_faces, tx - 0.2*scale, tx + 0.2*scale, cistern_y1, cistern_y2, FLOOR_THICKNESS + 0.4*scale, FLOOR_THICKNESS + 0.75*scale, "#FFFFFF")
         
         # 3. Walk-in Shower with Tempered Glass Screen
-        sx1, sx2 = maxx - 1.0 * scale, maxx - 0.1
+        # If door is on the right wall, position shower on the left wall to prevent obstructing entrance
+        if door_near_right:
+            sx1, sx2 = minx + 0.1, minx + 1.0 * scale
+            screen_x = sx2
+        else:
+            sx1, sx2 = maxx - 1.0 * scale, maxx - 0.1
+            screen_x = sx1
+
         add_box_to_faces(all_faces, sx1, sx2, miny + 0.1, maxy - 0.1, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.04*scale, "#E2E8F0")
-        add_box_to_faces(all_faces, sx1 - 0.02, sx1 + 0.02, miny + 0.1, maxy - 0.4, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.95*scale, "#93C5FD", alpha=0.4)
+        add_box_to_faces(all_faces, screen_x - 0.02, screen_x + 0.02, miny + 0.1, maxy - 0.4, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.95*scale, "#93C5FD", alpha=0.4)
         
     elif "kitchen" in name:
         # Kitchen Work Triangle: Refrigerator -> Countertop -> Sink -> Cooktop

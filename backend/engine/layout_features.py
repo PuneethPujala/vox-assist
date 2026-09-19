@@ -50,6 +50,23 @@ def extract_layout_features(layout):
         # Fallback if union fails
         convex_hull_area = total_area * 1.2 # Approx
         exterior_exposure = sum(poly.length for poly in rooms.values())
+        union_poly = None
+
+    # Calculate Habitable Daylight Access (Fenestration)
+    habitable_rooms = [
+        k for k, p in rooms.items()
+        if p is not None and not p.is_empty and any(k.lower().startswith(t) for t in ["living", "bedroom", "dining", "study", "family"])
+    ]
+    daylight_ok = 0
+    if union_poly is not None and habitable_rooms:
+        for r_name in habitable_rooms:
+            r_poly = rooms[r_name]
+            inter = r_poly.boundary.intersection(union_poly.boundary)
+            if inter.length >= 1.2:
+                daylight_ok += 1
+        habitable_daylight_pct = daylight_ok / len(habitable_rooms)
+    else:
+        habitable_daylight_pct = 1.0
 
     # Connectivity Metric (Average Graph Distance)
     for name, poly in rooms.items():
@@ -76,7 +93,9 @@ def extract_layout_features(layout):
         "convex_hull_area": round(convex_hull_area, 2),
         "exterior_exposure": round(exterior_exposure, 2),
         "avg_distance": round(avg_distance, 2),
-        "room_count": len(rooms)
+        "room_count": len(rooms),
+        "habitable_daylight_pct": round(habitable_daylight_pct, 2),
+        "habitable_room_count": len(habitable_rooms),
     }
 
     return features

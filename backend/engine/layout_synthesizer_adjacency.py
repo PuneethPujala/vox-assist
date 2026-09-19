@@ -63,14 +63,25 @@ def _random_aspect_ratio(base_ratio=1.5, variance=0.5):
     max_ratio = min(2.0, base_ratio + variance)
     return random.uniform(min_ratio, max_ratio)
 
-def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=None, envelope_poly=None, room_type=None):
+def _place_adjacent(
+    base_poly,
+    width,
+    height,
+    existing_polys,
+    preferred_sides=None,
+    envelope_poly=None,
+    room_type=None,
+    accessible_polys=None,
+    is_solitary_bathroom=False,
+):
     """
     Place room adjacent to base_poly with placement-time constraint pruning.
     Priority:
     1. STRICTLY within building envelope (hard constraint pruning).
     2. Matches preferred_sides (if provided).
-    3. MAXIMIZES shared perimeter with ALL existing polys (Gap Filling / Corner Logic).
-    4. Rewards exterior contact for bedrooms (egress feasibility).
+    3. Guarantees accessibility: bedrooms and solitary bathrooms must have valid entrance door walls.
+    4. MAXIMIZES shared perimeter with ALL existing polys (Gap Filling / Corner Logic).
+    5. Rewards exterior contact for bedrooms (egress feasibility).
     """
     # Safety check: prevent infinite sprawl
     MAX_DIMENSION = 100.0  # Maximum room dimension in meters
@@ -86,9 +97,11 @@ def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=No
     
     # Try original orientation, and rotated orientation if distinct
     orientations = [(width, height)]
-    if abs(width - height) > 0.3:
+    if abs(width - height) > 0.2:
         orientations.append((height, width))
         
+    poly_list = list(existing_polys)
+
     for (w, h) in orientations:
         placements = {
             'right': [
@@ -112,6 +125,37 @@ def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=No
                 box(minx + (base_w - w)/2.0, miny - h, minx + (base_w + w)/2.0, miny)
             ]
         }
+
+        # Corner / Notch Alignments against existing rooms
+        for ex in poly_list:
+            if ex is None or ex.is_empty:
+                continue
+            ex_x0, ex_y0, ex_x1, ex_y1 = ex.bounds
+            # Top wall of base_poly
+            placements['top'].append(box(ex_x1, maxy, ex_x1 + w, maxy + h))
+            placements['top'].append(box(ex_x0 - w, maxy, ex_x0, maxy + h))
+            # Bottom wall of base_poly
+            placements['bottom'].append(box(ex_x1, miny - h, ex_x1 + w, miny))
+            placements['bottom'].append(box(ex_x0 - w, miny - h, ex_x0, miny))
+            # Right wall of base_poly
+            placements['right'].append(box(maxx, ex_y1, maxx + w, ex_y1 + h))
+            placements['right'].append(box(maxx, ex_y0 - h, maxx + w, ex_y0))
+            # Left wall of base_poly
+            placements['left'].append(box(minx - w, ex_y1, minx, ex_y1 + h))
+            placements['left'].append(box(minx - w, ex_y0 - h, minx, ex_y0))
+
+        # Fine step intervals along base walls
+        if base_w > 1.2:
+            step_count = max(3, min(8, int(base_w / 0.6)))
+            for step_x in np.linspace(minx, maxx - w, step_count):
+                placements['top'].append(box(step_x, maxy, step_x + w, maxy + h))
+                placements['bottom'].append(box(step_x, miny - h, step_x + w, miny))
+        if base_h > 1.2:
+            step_count = max(3, min(8, int(base_h / 0.6)))
+            for step_y in np.linspace(miny, maxy - h, step_count):
+                placements['right'].append(box(maxx, step_y, maxx + w, step_y + h))
+                placements['left'].append(box(minx - w, step_y, minx, step_y + h))
+
         for s, box_list in placements.items():
             for p in box_list:
                 if preferred_sides and s in preferred_sides:
@@ -121,31 +165,48 @@ def _place_adjacent(base_poly, width, height, existing_polys, preferred_sides=No
             
     # Try per-candidate validation
     valid_candidates = []
-    poly_list = list(existing_polys)
     
     # Helper to check validity and score at placement time
     def evaluate_candidate(cand, loops_list):
         # 1. Check Overlaps
         for existing in loops_list:
+            if existing is None or existing.is_empty:
+                continue
             if cand.intersects(existing):
-                if cand.intersection(existing).area > 1e-5:
+                if cand.intersection(existing).area > 1e-4:
                     return None # Invalid (Overlap)
 
         # 2. Hard Constraint: Building Envelope Containment Pruning
         if envelope_poly is not None:
-            if not is_within_envelope(cand, envelope_poly, tolerance_sqm=0.20):
+            if not is_within_envelope(cand, envelope_poly, tolerance_sqm=0.35):
                 return None # REJECT candidate outside envelope
+
+        # 3. Mandatory Circulation Accessibility:
+        # Habitable bedrooms and solitary common bathrooms MUST have a direct entrance door from circulation
+        if accessible_polys:
+            valid_access_polys = [p for p in accessible_polys if p is not None and not p.is_empty]
+            if valid_access_polys:
+                if room_type in ["bedroom", "study"]:
+                    has_door_wall = any(cand.boundary.intersection(p.boundary).length >= 0.80 for p in valid_access_polys)
+                    if not has_door_wall:
+                        return None # Prune landlocked bedroom!
+                elif room_type == "bathroom" and is_solitary_bathroom:
+                    has_door_wall = any(cand.boundary.intersection(p.boundary).length >= 0.75 for p in valid_access_polys)
+                    if not has_door_wall:
+                        return None # Prune solitary bathroom lacking circulation door!
         
-        # 3. Calculate Contact Score (Shared Perimeter)
+        # 4. Calculate Contact Score (Shared Perimeter)
         contact_length = 0
         cand_boundary = cand.boundary
         for existing in loops_list:
+            if existing is None or existing.is_empty:
+                continue
             if cand.touches(existing) or cand.intersects(existing):
                 common = cand_boundary.intersection(existing.boundary)
                 if not common.is_empty:
                     contact_length += common.length
 
-        # 4. Bedroom Exterior Wall Bonus: favor outer boundary for natural light/egress
+        # 5. Bedroom Exterior Wall Bonus: favor outer boundary for natural light/egress
         if room_type == "bedroom" and envelope_poly is not None:
             ext_edge = cand_boundary.intersection(envelope_poly.boundary)
             if not ext_edge.is_empty and ext_edge.length >= 1.5:
@@ -321,24 +382,38 @@ def _filter_topological_doors(valid_adjacency, rooms):
         living_cands = [c for c in candidates if "living" in c[1].lower()]
 
         chosen_cand = None
-        for bc in bedroom_cands:
-            if bc[1] not in assigned_ensuites:
-                chosen_cand = bc
-                assigned_ensuites.add(bc[1])
-                break
+        is_solitary = (len(bathroom_rooms) == 1)
 
-        if not chosen_cand:
+        if is_solitary:
+            # Solitary bathroom MUST be common: prioritize circulation so all rooms have access
             if hall_cands:
                 chosen_cand = hall_cands[0]
-            elif bedroom_cands:
-                chosen_cand = bedroom_cands[0]
             elif living_cands:
                 chosen_cand = living_cands[0]
+            elif bedroom_cands:
+                chosen_cand = bedroom_cands[0]
             else:
                 chosen_cand = candidates[0]
+        else:
+            # Multi-bathroom: assign first as master ensuite, subsequent as common
+            for bc in bedroom_cands:
+                if bc[1] not in assigned_ensuites:
+                    chosen_cand = bc
+                    assigned_ensuites.add(bc[1])
+                    break
+
+            if not chosen_cand:
+                if hall_cands:
+                    chosen_cand = hall_cands[0]
+                elif living_cands:
+                    chosen_cand = living_cands[0]
+                elif bedroom_cands:
+                    chosen_cand = bedroom_cands[0]
+                else:
+                    chosen_cand = candidates[0]
 
         filtered_bathroom_pairs.append(chosen_cand[2])
-        logger.info(f"Bathroom Privacy: {b} restricted to single entrance via {chosen_cand[1]} (pruned {len(candidates)-1} pass-through candidate(s))")
+        logger.info(f"Bathroom Connectivity: {b} single entrance via {chosen_cand[1]} (common={is_solitary}, pruned {len(candidates)-1} candidate(s))")
 
     return non_bathroom_pairs + filtered_bathroom_pairs
 
@@ -458,7 +533,10 @@ def synthesize_single_floor(spec, config=None):
     
     # ── ENVELOPE BOUNDS CALCULATION ──────────────────────────────────────
     total_area_sqm = sum(float(r.get("area", 10.0)) for r in spec.get("rooms", []))
-    env_info = compute_building_envelope(total_area_sqm, aspect_ratio=1.20, circulation_factor=0.20)
+    has_kitchen_spec = any("kitchen" in r.get("type", "") for r in spec.get("rooms", []))
+    num_beds_spec = sum(1 for r in spec.get("rooms", []) if "bedroom" in r.get("type", ""))
+    target_ar = 1.30 if (has_kitchen_spec and num_beds_spec >= 2) else 1.22
+    env_info = compute_building_envelope(total_area_sqm, aspect_ratio=target_ar, circulation_factor=0.25)
     envelope_poly = env_info["polygon"]
     env_w = env_info["width"]
     env_h = env_info["height"]
@@ -477,9 +555,21 @@ def synthesize_single_floor(spec, config=None):
             
         room_index[r_type] = 1
         room_name = f"{r_type}_1"
-        # Place core living room against the front-left exterior wall (x=0, y=0)
+        # In multi-bedroom layouts with semi-public rooms (kitchen/dining),
+        # placing the living room with an x-offset leaves the left wall open for the kitchen,
+        # allowing bedrooms and bathrooms full perimeter access along the top and right walls.
+        has_kitchen = any("kitchen" in r.get("type", "") for r in spec.get("rooms", []))
+        num_bedrooms = sum(1 for r in spec.get("rooms", []) if "bedroom" in r.get("type", ""))
+        
         start_x = 0.0
         start_y = 0.0
+        if has_kitchen and num_bedrooms >= 2 and (env_w - width) >= 3.2:
+            kitchen_slot = min(3.8, max(3.0, (env_w - width) * 0.45))
+            start_x = round(kitchen_slot, 2)
+            env_w = max(env_w, start_x + width + 3.8)
+            env_h = max(env_h, start_y + height + 3.6)
+            envelope_poly = box(0.0, 0.0, env_w, env_h)
+
         poly = box(start_x, start_y, start_x + width, start_y + height)
         layouts[room_name] = poly
         core_room = room_name
@@ -600,9 +690,9 @@ def synthesize_single_floor(spec, config=None):
                     break
         
         if not poly:
-             preferred_sides = _get_compact_sides(layouts)
+             preferred_sides = ['left', 'top', 'bottom', 'right']
              poly = _place_adjacent(
-                 core_poly, width, height, layouts.values(), preferred_sides[:2],
+                 core_poly, width, height, layouts.values(), preferred_sides,
                  envelope_poly=envelope_poly, room_type=r_type
              )
              if poly:
@@ -633,6 +723,7 @@ def synthesize_single_floor(spec, config=None):
         room_name = f"{r_type}_{room_index[r_type]}"
         
         preferred_sides = _get_compact_sides(layouts)
+        accessible_rooms = [layouts[r] for r in layouts if any(k in r for k in ["living", "hallway", "dining"])]
         
         poly = _try_place_with_soft_constraints(
             r_type, width, height, layouts, adjacency_pairs,
@@ -644,7 +735,7 @@ def synthesize_single_floor(spec, config=None):
             for hall in circulation_rooms:
                 poly = _place_adjacent(
                     layouts[hall], width, height, layouts.values(), preferred_sides,
-                    envelope_poly=envelope_poly, room_type=r_type
+                    envelope_poly=envelope_poly, room_type=r_type, accessible_polys=accessible_rooms
                 )
                 if poly:
                     print(f"  🛏️  PRIVATE: {room_name} (attached to {hall})")
@@ -652,8 +743,8 @@ def synthesize_single_floor(spec, config=None):
 
         if not poly:
             poly = _place_adjacent(
-                core_poly, width, height, layouts.values(), preferred_sides[:3],
-                envelope_poly=envelope_poly, room_type=r_type
+                core_poly, width, height, layouts.values(), preferred_sides,
+                envelope_poly=envelope_poly, room_type=r_type, accessible_polys=accessible_rooms
             )
         
         if not poly:
@@ -661,18 +752,19 @@ def synthesize_single_floor(spec, config=None):
              for pub in public_rooms:
                  poly = _place_adjacent(
                      layouts[pub], width, height, layouts.values(), preferred_sides,
-                     envelope_poly=envelope_poly, room_type=r_type
+                     envelope_poly=envelope_poly, room_type=r_type, accessible_polys=accessible_rooms
                  )
                  if poly:
                      print(f"  🛏️  PRIVATE: {room_name} (attached to {pub})")
                      break
 
         if not poly:
-             # Buffer relaxation
+             # Buffer relaxation - still enforcing entrance accessibility from public rooms
              for anchor in list(layouts.keys()):
                  poly = _place_adjacent(
                      layouts[anchor], width, height, layouts.values(), None,
-                     envelope_poly=envelope_poly.buffer(2.0), room_type=r_type
+                     envelope_poly=envelope_poly.buffer(2.0), room_type=r_type,
+                     accessible_polys=accessible_rooms
                  )
                  if poly:
                      break
@@ -689,6 +781,8 @@ def synthesize_single_floor(spec, config=None):
     services = rooms_by_zone["service"]
     study_names = [name for name in layouts.keys() if name.startswith("study")]
     bathroom_idx = 0
+    total_bathrooms_in_spec = sum(1 for r in spec.get("rooms", []) if any(k in r.get("type", "") for k in ["bath", "toilet", "wash", "powder"]))
+    is_solitary_bathroom = (total_bathrooms_in_spec == 1)
     
     for idx, room in enumerate(services):
         r_type = room["type"]
@@ -699,16 +793,18 @@ def synthesize_single_floor(spec, config=None):
         room_index[r_type] = room_index.get(r_type, 0) + 1
         room_name = f"{r_type}_{room_index[r_type]}"
         
+        accessible_rooms = [layouts[r] for r in layouts if any(k in r for k in ["living", "hallway", "dining"])]
+        
         poly = _try_place_with_soft_constraints(
             r_type, width, height, layouts, adjacency_pairs,
             envelope_poly=envelope_poly
         )
         
-        # Strategy 1: Ensuite Bathroom (attach to corresponding bedroom, or study if bedrooms are full)
-        if not poly and r_type == "bathroom":
+        # Strategy 1: Multi-bath Ensuite Bathroom (attach to bedroom 1 ONLY if >= 2 bathrooms)
+        if not poly and r_type == "bathroom" and not is_solitary_bathroom:
             target_room = None
-            if bathroom_idx < len(bedroom_names):
-                target_room = bedroom_names[bathroom_idx]
+            if bathroom_idx == 0 and len(bedroom_names) > 0:
+                target_room = bedroom_names[0]
                 bathroom_idx += 1
             elif study_names:
                 target_room = study_names[0]
@@ -728,11 +824,11 @@ def synthesize_single_floor(spec, config=None):
         if not poly:
             preferred_targets = []
             if r_type == "bathroom":
-                # Wet wall clustering: bathroom near other bathrooms or kitchen
-                preferred_targets.extend([n for n in layouts if "bathroom" in n])
-                preferred_targets.extend([n for n in layouts if "kitchen" in n])
+                # For solitary common bath: prioritize living/hallway circulation
                 preferred_targets.extend([n for n in layouts if "hallway" in n])
                 preferred_targets.extend([n for n in layouts if "living" in n])
+                preferred_targets.extend([n for n in layouts if "bathroom" in n])
+                preferred_targets.extend([n for n in layouts if "kitchen" in n])
                 preferred_targets.extend([n for n in layouts if "study" in n])
             elif r_type in ["storage", "utility", "pantry"]:
                 preferred_targets.extend([n for n in layouts if "kitchen" in n])
@@ -746,10 +842,12 @@ def synthesize_single_floor(spec, config=None):
                 if target in layouts:
                     poly = _place_adjacent(
                         layouts[target], width, height, layouts.values(), compact_sides,
-                        envelope_poly=envelope_poly, room_type=r_type
+                        envelope_poly=envelope_poly, room_type=r_type,
+                        accessible_polys=accessible_rooms if (r_type == "bathroom" and is_solitary_bathroom) else None,
+                        is_solitary_bathroom=(r_type == "bathroom" and is_solitary_bathroom)
                     )
                     if poly:
-                        print(f"  🔧 SERVICE: {room_name} (attached to {target})")
+                        print(f"  🔧 SERVICE: {room_name} (attached to {target}, common={is_solitary_bathroom})")
                         break
         
         # Strategy 3: Envelope contained fallback
@@ -760,7 +858,9 @@ def synthesize_single_floor(spec, config=None):
              for target in all_rooms:
                  poly = _place_adjacent(
                      layouts[target], width, height, layouts.values(), compact_sides,
-                     envelope_poly=envelope_poly, room_type=r_type
+                     envelope_poly=envelope_poly, room_type=r_type,
+                     accessible_polys=accessible_rooms if (r_type == "bathroom" and is_solitary_bathroom) else None,
+                     is_solitary_bathroom=(r_type == "bathroom" and is_solitary_bathroom)
                  )
                  if poly:
                      print(f"  🔧 SERVICE: {room_name} (fallback attached to {target})")
@@ -773,7 +873,9 @@ def synthesize_single_floor(spec, config=None):
              for target in all_rooms:
                  poly = _place_adjacent(
                      layouts[target], width, height, layouts.values(), None,
-                     envelope_poly=envelope_poly.buffer(2.0), room_type=r_type
+                     envelope_poly=envelope_poly.buffer(2.0), room_type=r_type,
+                     accessible_polys=accessible_rooms if (r_type == "bathroom" and is_solitary_bathroom) else None,
+                     is_solitary_bathroom=(r_type == "bathroom" and is_solitary_bathroom)
                  )
                  if poly:
                      print(f"  🔧 SERVICE: {room_name} (buffer fallback attached to {target})")
