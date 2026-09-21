@@ -217,6 +217,8 @@ class LayoutValidator:
                 door_status = "fail"
                 door_details = access_res["details"]
                 violations.extend(access_res["violations"])
+            if access_res.get("warnings"):
+                warnings.extend(access_res["warnings"])
 
         if door_status == "pass":
             if ("doors" in layout or "entrance" in layout or "openings" in layout) and not entrance and len(active_rooms) > 1:

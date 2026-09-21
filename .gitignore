@@ -35,4 +35,5 @@ backend/engine/*.pkl
 # Generated Models and Tests
 backend/static/models/*.ply
 backend/engine/test_results.txt
+*.ply
 

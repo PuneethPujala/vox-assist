@@ -207,6 +207,7 @@ def validate_room_door_accessibility(
                     room_connections[r_name].append("door_geom")
 
     violations = []
+    warnings = []
     landlocked = []
 
     # Check for landlocked rooms
@@ -224,11 +225,23 @@ def validate_room_door_accessibility(
         if conns and not any(c in ("door_geom", "exterior") or any(circ in c.lower() for circ in ["living", "hall", "corridor", "foyer"]) for c in conns):
             violations.append(f"Solitary bathroom '{bath_name}' is isolated as an ensuite; single bathroom must open to common circulation")
 
+    # Multi-bathroom typology check: at least one bathroom should connect to public circulation
+    if len(bathrooms) >= 2:
+        has_common_circ = False
+        for b_name in bathrooms:
+            conns = room_connections.get(b_name, [])
+            if any(c in ("door_geom", "exterior") or any(circ in c.lower() for circ in ["living", "hall", "corridor", "foyer"]) for c in conns):
+                has_common_circ = True
+                break
+        if not has_common_circ:
+            warnings.append("Multi-bathroom home has no common bathroom opening to circulation/hallway for universal access")
+
     valid = len(violations) == 0
     return {
         "valid": valid,
         "status": "pass" if valid else "fail",
         "violations": violations,
+        "warnings": warnings,
         "landlocked_rooms": landlocked,
         "details": "All rooms have code-compliant door connectivity to circulation" if valid else "; ".join(violations)
     }

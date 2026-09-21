@@ -265,7 +265,7 @@ def add_box_to_faces(all_faces, x1, x2, y1, y2, z1, z2, color, alpha=1.0):
     all_faces.append({"vertices": [c100, c110, c111, c101], "color": color, "alpha": alpha})
 
 
-def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None, protected_circ_poly=None, openings=None):
+def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None, protected_circ_poly=None, openings=None, entrance_geom=None):
     if poly.is_empty: return
     
     # Bounding box and dimensions
@@ -281,20 +281,69 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
     door_polys = door_polys or []
     all_rooms = all_rooms or {}
     
+    if entrance_geom is None and openings:
+        for op in openings:
+            if op.get("type") == "entrance" or "exterior" in op.get("rooms", ()):
+                entrance_geom = op.get("polygon")
+                break
+    
     if "living" in name or "lounge" in name or "family" in name:
-        # 1. Determine best solid wall for TV (score North, South, East, West walls)
         walls = {
             "south": LineString([(minx, miny), (maxx, miny)]),
             "north": LineString([(minx, maxy), (maxx, maxy)]),
             "west":  LineString([(minx, miny), (minx, maxy)]),
             "east":  LineString([(maxx, miny), (maxx, maxy)]),
         }
-        
+
+        # 1. Identify Entrance Wall and Directional Inward Foyer Arrival Polygon
+        entrance_wall = None
+        foyer_keepout = None
+        if entrance_geom and not entrance_geom.is_empty:
+            for w_side, w_line in walls.items():
+                if entrance_geom.distance(w_line) < 0.45:
+                    entrance_wall = w_side
+                    break
+
+            eb = entrance_geom.bounds
+            ecx = (eb[0] + eb[2]) / 2.0
+            ecy = (eb[1] + eb[3]) / 2.0
+            ew = eb[2] - eb[0]
+            eh = eb[3] - eb[1]
+            foyer_depth = 1.70  # 1.7m inward arrival clearance
+            foyer_width = max(1.80, max(ew, eh) + 0.80)
+
+            if entrance_wall == "south":
+                foyer_keepout = box(ecx - foyer_width / 2.0, miny, ecx + foyer_width / 2.0, miny + foyer_depth)
+            elif entrance_wall == "north":
+                foyer_keepout = box(ecx - foyer_width / 2.0, maxy - foyer_depth, ecx + foyer_width / 2.0, maxy)
+            elif entrance_wall == "west":
+                foyer_keepout = box(minx, ecy - foyer_width / 2.0, minx + foyer_depth, ecy + foyer_width / 2.0)
+            elif entrance_wall == "east":
+                foyer_keepout = box(maxx - foyer_depth, ecy - foyer_width / 2.0, maxx, ecy + foyer_width / 2.0)
+            else:
+                foyer_keepout = entrance_geom.buffer(1.6)
+
         wall_scores = {}
         for w_side, w_line in walls.items():
             doors_on_wall = sum(1 for dp in door_polys if dp.intersects(w_line.buffer(0.25)))
             length_pref = w_line.length if w_side in ["south", "north"] else w_line.length * 0.95
-            wall_scores[w_side] = -doors_on_wall * 10.0 + length_pref
+            score = -doors_on_wall * 10.0 + length_pref
+            
+            # The Main Entrance wall must NEVER host TV / media console
+            if w_side == entrance_wall:
+                score = -9999.0
+
+            # If placing TV on opposite wall would force sofa into the foyer arrival path, penalize it
+            if entrance_wall == "south" and w_side == "north" and h < (foyer_depth + 2.2):
+                score -= 15.0
+            elif entrance_wall == "north" and w_side == "south" and h < (foyer_depth + 2.2):
+                score -= 15.0
+            elif entrance_wall == "west" and w_side == "east" and w < (foyer_depth + 2.2):
+                score -= 15.0
+            elif entrance_wall == "east" and w_side == "west" and w < (foyer_depth + 2.2):
+                score -= 15.0
+
+            wall_scores[w_side] = score
 
         best_wall = max(wall_scores.items(), key=lambda x: x[1])[0]
         
@@ -304,6 +353,17 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
             tv_center_y = miny + 0.35 if is_south else maxy - 0.35 * scale
             dist = min(2.4, max(1.8, (h - 0.8) * 0.55))
             sofa_y = miny + dist if is_south else maxy - dist - 0.7 * scale
+
+            # Protect Foyer Arrival Zone: ensure sofa never blocks entrance
+            if foyer_keepout and not is_south:
+                foyer_top = foyer_keepout.bounds[3]
+                if sofa_y < foyer_top + 0.20:
+                    sofa_y = min(maxy - 1.2 * scale, foyer_top + 0.20)
+            elif foyer_keepout and is_south:
+                foyer_bottom = foyer_keepout.bounds[1]
+                if sofa_y + 0.7 * scale > foyer_bottom - 0.20:
+                    sofa_y = max(miny + 0.5 * scale, foyer_bottom - 0.20 - 0.7 * scale)
+
             coffee_y = (tv_center_y + sofa_y) / 2.0
             
             # TV Media Unit (width 1.8m, depth 0.4m, height 0.45m)
@@ -340,27 +400,35 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
             tv_x = minx + 0.15 if is_west else maxx - 0.55 * scale
             dist = min(2.4, max(1.8, (w - 0.8) * 0.55))
             sofa_x = minx + dist if is_west else maxx - dist - 0.7 * scale
+
+            # If entrance is on South wall, adjust conversation center north of foyer keep-out
+            cy_furniture = cy
+            if foyer_keepout and entrance_wall == "south":
+                foyer_top = foyer_keepout.bounds[3]
+                if cy - 1.2 * scale < foyer_top:
+                    cy_furniture = min(maxy - 1.3 * scale, foyer_top + 1.2 * scale)
+
             coffee_x = (cx + sofa_x) / 2.0
             
             # TV Media Unit
             th = min(0.9 * scale, h * 0.28)
-            add_box_to_faces(all_faces, tv_x, tv_x + 0.4 * scale, cy - th, cy + th, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#334155")
+            add_box_to_faces(all_faces, tv_x, tv_x + 0.4 * scale, cy_furniture - th, cy_furniture + th, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#334155")
             # Mounted TV Screen
             sh = th * 0.8
             screen_x1 = minx + 0.04 if is_west else maxx - 0.08
             screen_x2 = minx + 0.08 if is_west else maxx - 0.04
-            add_box_to_faces(all_faces, screen_x1, screen_x2, cy - sh, cy + sh, FLOOR_THICKNESS + 0.9 * scale, FLOOR_THICKNESS + 1.65 * scale, "#0F172A")
+            add_box_to_faces(all_faces, screen_x1, screen_x2, cy_furniture - sh, cy_furniture + sh, FLOOR_THICKNESS + 0.9 * scale, FLOOR_THICKNESS + 1.65 * scale, "#0F172A")
             
             # Area Rug & Coffee Table
-            add_box_to_faces(all_faces, coffee_x - 0.8 * scale, coffee_x + 0.8 * scale, cy - 1.2 * scale, cy + 1.2 * scale, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
-            add_box_to_faces(all_faces, coffee_x - 0.3 * scale, coffee_x + 0.3 * scale, cy - 0.5 * scale, cy + 0.5 * scale, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
+            add_box_to_faces(all_faces, coffee_x - 0.8 * scale, coffee_x + 0.8 * scale, cy_furniture - 1.2 * scale, cy_furniture + 1.2 * scale, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
+            add_box_to_faces(all_faces, coffee_x - 0.3 * scale, coffee_x + 0.3 * scale, cy_furniture - 0.5 * scale, cy_furniture + 0.5 * scale, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
             
             # Sofa Facing West/East
             cd = 0.4 * scale
             back_x1 = sofa_x + 0.3 * scale if is_west else sofa_x
             back_x2 = sofa_x + 0.4 * scale if is_west else sofa_x + 0.1 * scale
-            add_box_to_faces(all_faces, sofa_x, sofa_x + cd, cy - 1.0 * scale, cy + 1.0 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
-            add_box_to_faces(all_faces, back_x1, back_x2, cy - 1.0 * scale, cy + 1.0 * scale, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
+            add_box_to_faces(all_faces, sofa_x, sofa_x + cd, cy_furniture - 1.0 * scale, cy_furniture + 1.0 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+            add_box_to_faces(all_faces, back_x1, back_x2, cy_furniture - 1.0 * scale, cy_furniture + 1.0 * scale, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
 
         # Integrated Dining Zone if spacious and no separate dining room
         has_dining_room = any("dining" in r.lower() for r in all_rooms.keys())
@@ -417,6 +485,9 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
                     inter_area = inter.area if not inter.is_empty else 0.0
 
                 if hard_conflict:
+                    continue
+
+                if foyer_keepout and env.intersects(foyer_keepout):
                     continue
 
                 min_door_dist = 999.0
@@ -695,8 +766,8 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
         for f in faces:
             all_faces.append({"vertices": f, "color": color, "alpha": 0.9})
             
-        # Add 3D Furniture blocks (constrained by protected circulation)
-        _place_room_furniture(all_faces, name.lower(), poly, door_polygons, all_rooms=rooms, protected_circ_poly=protected_circ, openings=openings)
+        # Add 3D Furniture blocks (constrained by protected circulation and entrance keep-out)
+        _place_room_furniture(all_faces, name.lower(), poly, door_polygons, all_rooms=rooms, protected_circ_poly=protected_circ, openings=openings, entrance_geom=entrance_geom)
 
     # Add Foyer Mat / Welcome Tile Inlay directly inside Entrance Door
     if entrance_geom and not entrance_geom.is_empty:

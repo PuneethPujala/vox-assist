@@ -571,9 +571,30 @@ class ProximityLayoutGenerator:
         if n is None or n < 1 or n > 6:
             return None
         print(f"[BHK] Detected {n}BHK — expanding. Total: {total_sqm:.1f} sqm")
-        order = ['living'] + ['bedroom']*n + ['kitchen','bathroom','bathroom','hallway','balcony']
-        if n >= 2: order.append('study')
-        if n >= 3: order.append('dining')
+        # Area-aware bathroom allocation: prevent cramping when area is tight (<65 sqm / ~700 sqft)
+        explicit_two_baths = bool(re.search(r'\b(?:2|two)\s+bath|\bensuite|\battached\s+bath', text, re.IGNORECASE))
+        explicit_single_bath = bool(re.search(r'\b(?:1|one|single)\s+bath', text, re.IGNORECASE))
+        
+        if n == 1:
+            bath_count = 2 if explicit_two_baths else 1
+        elif n == 2:
+            if explicit_single_bath:
+                bath_count = 1
+            elif explicit_two_baths or total_sqm >= 65:
+                bath_count = 2
+            else:
+                bath_count = 1
+        else:  # n >= 3
+            bath_count = 1 if explicit_single_bath else (3 if (total_sqm >= 120 and n >= 4) else 2)
+
+        order = ['living'] + ['bedroom']*n + ['kitchen'] + ['bathroom']*bath_count + ['hallway']
+        if total_sqm >= 75:
+            order.append('balcony')
+        if n >= 2 and total_sqm >= 95:
+            order.append('study')
+        if n >= 2 and (total_sqm >= 65 or 'dining' in text.lower()):
+            order.append('dining')
+
         ratios = {'living':0.22,'bedroom':0.20,'kitchen':0.12,'bathroom':0.07,'hallway':0.06,'balcony':0.07,'study':0.09,'dining':0.10}
         counts = {}
         for t in order: counts[t] = counts.get(t,0)+1
@@ -584,7 +605,22 @@ class ProximityLayoutGenerator:
             multi = counts[t]>1
             name = f"{t}_{inst[t]}" if multi else t
             area = max(self.min_areas.get(t,4), (ratios.get(t,0.08)/total_w)*total_sqm)
-            rooms.append({'type':t,'instance':inst[t],'name':name,'area':round(area,2),'auto':False,'explicit_area':False})
+            room_item = {
+                'type': t,
+                'instance': inst[t],
+                'name': name,
+                'area': round(area,2),
+                'auto': False,
+                'explicit_area': False
+            }
+            if t == 'bathroom':
+                if bath_count == 1:
+                    room_item['typology'] = 'common_bathroom'
+                elif inst[t] == 1:
+                    room_item['typology'] = 'master_ensuite'
+                else:
+                    room_item['typology'] = 'common_bathroom'
+            rooms.append(room_item)
         print(f"[BHK] {len(rooms)} rooms: " + ", ".join(r['name'] for r in rooms))
         return rooms
 
@@ -876,6 +912,18 @@ class ProximityLayoutGenerator:
                 if t in excluded_types: continue
                 room_list.append({'type': t, 'area': 0, 'auto': True})
 
+        # C2. Multi-Bedroom Bathroom Typology Program:
+        # In homes with >= 2 bedrooms and total_area >= 65 sqm (or explicit attached/ensuite request),
+        # standard architectural program requires at least 2 bathrooms (1 Master Ensuite + 1 Common Bath).
+        bed_count = sum(1 for r in room_list if r.get('type') == 'bedroom')
+        bath_count = sum(1 for r in room_list if r.get('type') == 'bathroom')
+        explicit_single = bool(re.search(r'\b(?:1|one|single)\s+bath', prompt, re.IGNORECASE))
+        explicit_two = bool(re.search(r'\b(?:2|two)\s+bath|\bensuite|\battached\s+bath', prompt, re.IGNORECASE))
+        
+        if bed_count >= 2 and bath_count == 1 and not explicit_single:
+            if total_area >= 65 or explicit_two:
+                room_list.append({'type': 'bathroom', 'area': 0, 'auto': True})
+
         # D. Distribute Remaining Area
         used_area = sum(r.get('area', 0) for r in room_list if not r.get('auto', False))
         remaining_area = max(0, total_area - used_area)
@@ -937,6 +985,14 @@ class ProximityLayoutGenerator:
             r['instance'] = type_cur[t]
             r['name'] = f"{t}_{type_cur[t]}" if type_final[t] > 1 else t
             r['auto'] = r.get('auto', False) # ensure key exists
+            # Assign semantic bathroom typology if not already set
+            if t == 'bathroom' and 'typology' not in r:
+                if type_final[t] == 1:
+                    r['typology'] = 'common_bathroom'
+                elif r['instance'] == 1:
+                    r['typology'] = 'master_ensuite'
+                else:
+                    r['typology'] = 'common_bathroom'
             # Ensure requested_area_sqft is set for all rooms
             r['requested_area_sqft'] = int(r['area'] * 10.764)
 

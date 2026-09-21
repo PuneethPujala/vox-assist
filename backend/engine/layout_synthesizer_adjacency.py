@@ -20,9 +20,15 @@ from door_generator import (
 try:
     from constraints.envelope import compute_building_envelope, is_within_envelope
     from constraints.room_dimensions import compute_bounded_room_dimensions
+    from building_footprint import select_and_partition_archetype, can_partition_archetype
 except ImportError:
     from engine.constraints.envelope import compute_building_envelope, is_within_envelope
     from engine.constraints.room_dimensions import compute_bounded_room_dimensions
+    try:
+        from engine.building_footprint import select_and_partition_archetype, can_partition_archetype
+    except ImportError:
+        select_and_partition_archetype = None
+        can_partition_archetype = None
 
 # =========================
 # CONSTANTS
@@ -394,23 +400,43 @@ def _filter_topological_doors(valid_adjacency, rooms):
         else:
             non_bathroom_pairs.append((r1, r2))
 
+    # Count door connections in non_bathroom_pairs to detect potentially landlocked rooms
+    room_door_counts = {}
+    for r1, r2 in non_bathroom_pairs:
+        room_door_counts[r1] = room_door_counts.get(r1, 0) + 1
+        room_door_counts[r2] = room_door_counts.get(r2, 0) + 1
+
     filtered_bathroom_pairs = []
     for b, candidates in baths_to_pairs.items():
         if not candidates:
             continue
         if len(candidates) == 1:
             filtered_bathroom_pairs.append(candidates[0][2])
+            room_door_counts[candidates[0][1]] = room_door_counts.get(candidates[0][1], 0) + 1
             continue
 
         bedroom_cands = [c for c in candidates if "bedroom" in c[1].lower()]
         hall_cands = [c for c in candidates if "hall" in c[1].lower() or "corridor" in c[1].lower()]
         living_cands = [c for c in candidates if "living" in c[1].lower()]
 
+        # Landlocked Room Guard:
+        # If a candidate connects to a room that has 0 other doors in the entire house,
+        # prioritize connecting to it so it is never landlocked.
+        isolated_cands = [c for c in bedroom_cands if room_door_counts.get(c[1], 0) == 0]
+        if isolated_cands:
+            chosen_cand = isolated_cands[0]
+            room_door_counts[chosen_cand[1]] = room_door_counts.get(chosen_cand[1], 0) + 1
+            filtered_bathroom_pairs.append(chosen_cand[2])
+            logger.info(f"Bathroom Connectivity (Landlocked Guard): {b} single entrance via isolated {chosen_cand[1]}")
+            continue
+
         chosen_cand = None
         is_solitary = (len(bathroom_rooms) == 1)
+        is_common = is_solitary or ("2" in b.lower()) or ("common" in b.lower()) or (b != bathroom_rooms[0])
+        is_master_ensuite = not is_common
 
-        if is_solitary:
-            # Solitary bathroom MUST be common: prioritize circulation so all rooms have access
+        if is_solitary or is_common:
+            # Common bathroom MUST connect to public circulation (hallway / living)
             if hall_cands:
                 chosen_cand = hall_cands[0]
             elif living_cands:
@@ -420,25 +446,22 @@ def _filter_topological_doors(valid_adjacency, rooms):
             else:
                 chosen_cand = candidates[0]
         else:
-            # Multi-bathroom: assign first as master ensuite, subsequent as common
-            for bc in bedroom_cands:
-                if bc[1] not in assigned_ensuites:
-                    chosen_cand = bc
-                    assigned_ensuites.add(bc[1])
-                    break
-
-            if not chosen_cand:
-                if hall_cands:
-                    chosen_cand = hall_cands[0]
-                elif living_cands:
-                    chosen_cand = living_cands[0]
-                elif bedroom_cands:
-                    chosen_cand = bedroom_cands[0]
-                else:
-                    chosen_cand = candidates[0]
+            # Master Ensuite: strictly connects to bedroom_1 (Master Bedroom)
+            master_cands = [c for c in bedroom_cands if "1" in c[1].lower() or "master" in c[1].lower()]
+            if master_cands:
+                chosen_cand = master_cands[0]
+            elif bedroom_cands:
+                chosen_cand = bedroom_cands[0]
+            elif hall_cands:
+                chosen_cand = hall_cands[0]
+            elif living_cands:
+                chosen_cand = living_cands[0]
+            else:
+                chosen_cand = candidates[0]
 
         filtered_bathroom_pairs.append(chosen_cand[2])
-        logger.info(f"Bathroom Connectivity: {b} single entrance via {chosen_cand[1]} (common={is_solitary}, pruned {len(candidates)-1} candidate(s))")
+        room_door_counts[chosen_cand[1]] = room_door_counts.get(chosen_cand[1], 0) + 1
+        logger.info(f"Bathroom Connectivity: {b} single entrance via {chosen_cand[1]} (common={is_common}, pruned {len(candidates)-1} candidate(s))")
 
     return non_bathroom_pairs + filtered_bathroom_pairs
 
@@ -1022,12 +1045,27 @@ def _validate_room_counts(spec, placed_rooms):
 
 def synthesize_layout_from_spec(spec, config=None):
     cfg = {**DEFAULT_CONFIG, **(config or {})}
-    rooms, envelope_poly = synthesize_single_floor(spec, config)
+    rooms = None
+    envelope_poly = None
+
+    # V4 Footprint-First Architectural Partitioning
+    if not cfg.get("force_synthesizer", False) and select_and_partition_archetype:
+        try:
+            archetype_res = select_and_partition_archetype(
+                spec,
+                plot=cfg.get("plot"),
+                seed=cfg.get("RANDOM_SEED")
+            )
+            if archetype_res:
+                rooms, envelope_poly = archetype_res
+                logger.info(f"✨ Synthesized layout via footprint archetype with {len(rooms)} rooms.")
+        except Exception as e:
+            logger.warning(f"Archetype partitioning fallback to bottom-up synthesizer: {e}")
+
+    if not rooms:
+        rooms, envelope_poly = synthesize_single_floor(spec, config)
     
     # Soft validation: log whether all rooms were placed, but never abort.
-    # A partial layout (e.g. hallway couldn't be placed) still gets scored
-    # and potentially selected. Raising here caused "Failed to generate any
-    # valid candidates" because every candidate was silently discarded.
     is_valid = _validate_room_counts(spec, rooms)
     if not is_valid:
         logger.warning("Proceeding with partial layout — one or more rooms could not be placed.")
