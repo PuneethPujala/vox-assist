@@ -286,16 +286,36 @@ class LayoutValidator:
             warnings.extend(wet_res["warnings"])
 
         # -------------------------------------------------------------
-        # CHECK 7: Furniture Clearance (SOFT)
+        # CHECK 7: Furniture Clearance & Usability (SOFT)
         # -------------------------------------------------------------
-        furn_res = validate_furniture_clearance(active_rooms)
+        windows_data = layout.get("windows")
+        if windows_data is None:
+            try:
+                from engine.window_generator import generate_windows
+                windows_data = generate_windows(active_rooms, doors_geom=doors, entrance_geom=entrance)
+            except Exception:
+                try:
+                    from window_generator import generate_windows
+                    windows_data = generate_windows(active_rooms, doors_geom=doors, entrance_geom=entrance)
+                except Exception:
+                    windows_data = None
+
+        furn_res = validate_furniture_clearance(
+            active_rooms,
+            openings=openings,
+            doors=doors,
+            windows=windows_data,
+            placed_furniture=layout.get("furniture"),
+            entrance=entrance
+        )
         checks.append({
             "id": "furniture",
-            "name": "Furniture Clearance",
+            "name": "Furniture Clearance & Usability",
             "status": furn_res["status"],
-            "details": furn_res["details"]
+            "details": furn_res["details"],
+            "subchecks": furn_res.get("subchecks", [])
         })
-        if furn_res["warnings"]:
+        if furn_res.get("warnings"):
             warnings.extend(furn_res["warnings"])
 
         # -------------------------------------------------------------
