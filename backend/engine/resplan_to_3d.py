@@ -329,14 +329,15 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
         for w_side, w_line in walls.items():
             doors_on_wall = sum(1 for dp in door_polys if dp.intersects(w_line.buffer(0.25)))
             has_win_on_wall = any(
-                w_line.distance(win["wall_segment"]) < 0.25 or w_line.distance(win["base_line"]) < 0.25
+                w_line.buffer(0.05).contains(win["wall_segment"])
                 for win in room_windows
             )
             
             is_interior = False
             if wall_graph:
                 for (p1, p2), sharing in wall_graph.items():
-                    if LineString([p1, p2]).distance(w_line) < 0.15 and len(sharing) > 1:
+                    inter = LineString([p1, p2]).intersection(w_line.buffer(0.05))
+                    if inter.length > 0.5 and len(sharing) > 1:
                         is_interior = True
                         break
                         
@@ -598,13 +599,14 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
         for w_side, w_line in walls.items():
             wall_has_door[w_side] = any(dp.intersects(w_line.buffer(0.30)) for dp in door_polys)
             wall_has_window[w_side] = any(
-                w_line.distance(win["wall_segment"]) < 0.25 or w_line.distance(win["base_line"]) < 0.25
+                w_line.buffer(0.05).contains(win["wall_segment"])
                 for win in room_windows
             )
             is_int = False
             if wall_graph:
                 for (p1, p2), sharing in wall_graph.items():
-                    if LineString([p1, p2]).distance(w_line) < 0.15 and len(sharing) > 1:
+                    inter = LineString([p1, p2]).intersection(w_line.buffer(0.05))
+                    if inter.length > 0.5 and len(sharing) > 1:
                         is_int = True
                         break
             wall_is_interior[w_side] = is_int
@@ -923,6 +925,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
 
     # Precompute exterior windows & opening exclusion polygons
     room_windows = defaultdict(list)
+    windows_by_edge = {}
     window_exclusion_polys = []
     exterior_windows_meta = []
 
@@ -992,6 +995,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                 "is_bathroom": is_bathroom
             }
             room_windows[sharing_rooms[0].lower()].append(win_item)
+            windows_by_edge[(p1, p2)] = win_item
             window_exclusion_polys.append(k_poly)
             exterior_windows_meta.append(win_item)
 
@@ -1098,11 +1102,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                 continue
 
             # Check if this exterior segment has a window in precomputed list
-            matched_win = None
-            for win in room_windows.get(room_name, []):
-                if win["base_line"].equals(base_line) or win["base_line"].distance(base_line) < 0.05:
-                    matched_win = win
-                    break
+            matched_win = windows_by_edge.get((p1, p2))
 
             if matched_win:
                 p_start = matched_win["p_start"]
