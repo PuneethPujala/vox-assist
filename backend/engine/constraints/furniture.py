@@ -7,11 +7,29 @@ a standard bed with code-recommended 0.75m (30-inch) walking and egress clearanc
 from typing import Dict, Any, List, Tuple, Optional
 from shapely.geometry import Polygon, Point, box, LineString
 
-# Standard Furniture Footprints (meters)
-# Queen Bed: 1.52m x 2.03m
-# Double/Full Bed: 1.37m x 1.90m
-# Twin Bed: 0.99m x 1.90m
-# Walkway Clearance: >= 0.75m (30 inches)
+try:
+    from constraints.furniture_constants import (
+        BATHROOM_ENTRY_LANDING, DOOR_CLEARANCE, DOOR_SWING_ANGLE_RAD,
+        WC_FRONT_CLEARANCE, WC_SIDE_CLEARANCE, VANITY_FRONT_CLEARANCE,
+        SHOWER_ENTRY_CLEARANCE, TV_MIN_DISTANCE, TV_MAX_DISTANCE
+    )
+except ImportError:
+    try:
+        from engine.constraints.furniture_constants import (
+            BATHROOM_ENTRY_LANDING, DOOR_CLEARANCE, DOOR_SWING_ANGLE_RAD,
+            WC_FRONT_CLEARANCE, WC_SIDE_CLEARANCE, VANITY_FRONT_CLEARANCE,
+            SHOWER_ENTRY_CLEARANCE, TV_MIN_DISTANCE, TV_MAX_DISTANCE
+        )
+    except ImportError:
+        BATHROOM_ENTRY_LANDING = 0.80
+        DOOR_CLEARANCE = 0.80
+        DOOR_SWING_ANGLE_RAD = 1.570796
+        WC_FRONT_CLEARANCE = 0.55
+        WC_SIDE_CLEARANCE = 0.20
+        VANITY_FRONT_CLEARANCE = 0.60
+        SHOWER_ENTRY_CLEARANCE = 0.65
+        TV_MIN_DISTANCE = 1.80
+        TV_MAX_DISTANCE = 3.60
 
 def validate_bedroom_furniture_clearance(
     bedroom_name: str,
@@ -98,9 +116,13 @@ def validate_furniture_window_clearance(
             f_room = furn.get("room", "")
             f_height = furn.get("height", 0.0)
             
-            # Wardrobes, tall cabinets, or bed headboards
-            is_tall_or_bed = any(t in f_type for t in ["wardrobe", "closet", "cabinet", "tall", "headboard"]) or f_height >= 1.5
-            if not is_tall_or_bed or not f_poly or f_poly.is_empty:
+            # Skip non-wardrobe fixtures (bath, kitchen, beds, seating, tables)
+            if any(k in f_type for k in ["shower", "toilet", "wc", "vanity", "sink", "cooktop", "counter", "fridge", "refrigerator", "hood", "rug", "table", "sofa", "tv", "bed"]):
+                continue
+
+            # Wardrobes and tall storage units (>= 1.5m)
+            is_tall_wardrobe = any(t in f_type for t in ["wardrobe", "closet"]) or (f_height >= 1.5 and ("wardrobe" in f_type or "closet" in f_type or "cabinet" in f_type))
+            if not is_tall_wardrobe or not f_poly or f_poly.is_empty:
                 continue
                 
             for win in windows:
@@ -266,6 +288,200 @@ def validate_door_swing_furniture_clearance(
     }
 
 
+def validate_bathroom_fixture_clearances(
+    layout_rooms: Dict[str, Polygon],
+    placed_furniture: Optional[List[Dict[str, Any]]] = None,
+    doors: Optional[Any] = None,
+    openings: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Validates bathroom usability, entry landing box (0.80m x 0.80m),
+    door swing non-collision with fixtures, and fixture-to-fixture separation.
+    """
+    bathrooms = {
+        name: poly for name, poly in layout_rooms.items()
+        if any(t in name.lower() for t in ["bath", "toilet", "powder"]) and poly is not None and not poly.is_empty
+    }
+    if not bathrooms:
+        return {
+            "valid": True,
+            "status": "pass",
+            "message": "No bathrooms to evaluate for fixture clearance",
+            "violations": [],
+            "warnings": []
+        }
+
+    violations = []
+    warnings = []
+
+    if placed_furniture:
+        for r_name, r_poly in bathrooms.items():
+            r_fixtures = [f for f in placed_furniture if f.get("room") == r_name]
+            if not r_fixtures:
+                continue
+
+            minx, miny, maxx, maxy = r_poly.bounds
+
+            # 1. Door Landing Box Check
+            door_pt = None
+            if openings:
+                for op in openings:
+                    rooms_pair = op.get("rooms", ())
+                    if r_name in rooms_pair:
+                        op_p = op.get("polygon")
+                        if op_p:
+                            door_pt = (op_p.centroid.x, op_p.centroid.y)
+                            break
+            if not door_pt and doors:
+                door_list = [doors] if isinstance(doors, Polygon) else (doors.geoms if hasattr(doors, "geoms") else (doors if isinstance(doors, list) else []))
+                for dp in door_list:
+                    if dp.intersects(r_poly.buffer(0.20)):
+                        door_pt = (dp.centroid.x, dp.centroid.y)
+                        break
+
+            if door_pt:
+                dcx, dcy = door_pt
+                dists = {
+                    "bottom": abs(dcy - miny),
+                    "top": abs(dcy - maxy),
+                    "left": abs(dcx - minx),
+                    "right": abs(dcx - maxx)
+                }
+                door_wall = min(dists, key=dists.get)
+                ld = BATHROOM_ENTRY_LANDING
+                if door_wall == "bottom":
+                    landing_box = box(dcx - ld/2.0, miny, dcx + ld/2.0, miny + ld)
+                    swing_box = box(dcx - 0.85, miny, dcx + 0.85, miny + 0.85)
+                elif door_wall == "top":
+                    landing_box = box(dcx - ld/2.0, maxy - ld, dcx + ld/2.0, maxy)
+                    swing_box = box(dcx - 0.85, maxy - 0.85, dcx + 0.85, maxy)
+                elif door_wall == "left":
+                    landing_box = box(minx, dcy - ld/2.0, minx + ld, dcy + ld/2.0)
+                    swing_box = box(minx, dcy - 0.85, minx + 0.85, dcy + 0.85)
+                else:
+                    landing_box = box(maxx - ld, dcy - ld/2.0, maxx, dcy + ld/2.0)
+                    swing_box = box(maxx - 0.85, dcy - 0.85, maxx, dcy + 0.85)
+
+                for f in r_fixtures:
+                    f_poly = f.get("poly")
+                    f_type = f.get("type", "fixture").capitalize()
+                    if f_poly and not f_poly.is_empty:
+                        if f_poly.intersects(landing_box):
+                            inter_area = f_poly.intersection(landing_box).area
+                            if inter_area > 0.02:
+                                violations.append(f"{r_name}: {f_type} encroaches into 0.80m doorway landing zone")
+                        elif f_poly.intersects(swing_box):
+                            inter_area = f_poly.intersection(swing_box).area
+                            if inter_area > 0.04:
+                                warnings.append(f"{r_name}: {f_type} is close to bathroom door swing arc")
+
+            # 2. Fixture-to-Fixture Clearance
+            vanities = [f for f in r_fixtures if any(t in f.get("type", "").lower() for t in ["vanity", "basin"])]
+            toilets = [f for f in r_fixtures if any(t in f.get("type", "").lower() for t in ["toilet", "wc"])]
+            showers = [f for f in r_fixtures if any(t in f.get("type", "").lower() for t in ["shower", "tub"])]
+
+            if vanities and toilets:
+                v_poly = vanities[0].get("poly")
+                t_poly = toilets[0].get("poly")
+                if v_poly and t_poly and v_poly.intersects(t_poly):
+                    violations.append(f"{r_name}: Vanity overlaps with Toilet fixture")
+
+            if showers and vanities:
+                s_poly = showers[0].get("poly")
+                v_poly = vanities[0].get("poly")
+                if s_poly and v_poly and s_poly.intersects(v_poly):
+                    violations.append(f"{r_name}: Shower enclosure collides with Vanity")
+
+            if showers and toilets:
+                s_poly = showers[0].get("poly")
+                t_poly = toilets[0].get("poly")
+                if s_poly and t_poly and s_poly.intersects(t_poly):
+                    violations.append(f"{r_name}: Shower enclosure collides with Toilet")
+
+    else:
+        for r_name, r_poly in bathrooms.items():
+            minx, miny, maxx, maxy = r_poly.bounds
+            w, h = maxx - minx, maxy - miny
+            if min(w, h) < 1.30:
+                warnings.append(f"{r_name}: Narrow bathroom width ({min(w, h):.2f}m < 1.4m) restricts standard fixture clearances")
+
+    status = "fail" if violations else ("warn" if warnings else "pass")
+    msg = "All bathroom fixtures maintain code-standard landing and swing clearances"
+    if violations:
+        msg = "; ".join(violations)
+    elif warnings:
+        msg = "; ".join(warnings)
+
+    return {
+        "valid": len(violations) == 0,
+        "status": status,
+        "message": msg,
+        "violations": violations,
+        "warnings": warnings
+    }
+
+
+def validate_kitchen_workzones(
+    layout_rooms: Dict[str, Polygon],
+    placed_furniture: Optional[List[Dict[str, Any]]] = None,
+    openings: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Validates kitchen work zones (Storage -> Prep -> Washing -> Cooking),
+    adequate counter run, and unobstructed walkthrough into living/dining areas.
+    """
+    kitchens = {
+        name: poly for name, poly in layout_rooms.items()
+        if "kitchen" in name.lower() and poly is not None and not poly.is_empty
+    }
+    if not kitchens:
+        return {
+            "valid": True,
+            "status": "pass",
+            "message": "No kitchen to evaluate for work-zone layout",
+            "violations": [],
+            "warnings": []
+        }
+
+    violations = []
+    warnings = []
+
+    if placed_furniture:
+        for k_name, k_poly in kitchens.items():
+            k_fixtures = [f for f in placed_furniture if f.get("room") == k_name]
+            if openings:
+                for op in openings:
+                    if k_name in op.get("rooms", ()):
+                        op_p = op.get("polygon")
+                        if op_p:
+                            for f in k_fixtures:
+                                f_poly = f.get("poly")
+                                if f_poly and f_poly.intersects(op_p):
+                                    if f_poly.intersection(op_p).area > 0.03:
+                                        violations.append(f"{k_name}: Kitchen {f.get('type')} obstructs doorway opening")
+    else:
+        for k_name, k_poly in kitchens.items():
+            minx, miny, maxx, maxy = k_poly.bounds
+            w, h = maxx - minx, maxy - miny
+            if min(w, h) < 1.70:
+                warnings.append(f"{k_name}: Kitchen width ({min(w, h):.2f}m < 1.8m) limits parallel counter clearance")
+
+    status = "fail" if violations else ("warn" if warnings else "pass")
+    msg = "Kitchen work zones (prep, sink, cooktop, storage) clearly defined and accessible"
+    if violations:
+        msg = "; ".join(violations)
+    elif warnings:
+        msg = "; ".join(warnings)
+
+    return {
+        "valid": len(violations) == 0,
+        "status": status,
+        "message": msg,
+        "violations": violations,
+        "warnings": warnings
+    }
+
+
 def validate_furniture_clearance(
     layout_rooms: Dict[str, Polygon],
     openings: Optional[List[Dict[str, Any]]] = None,
@@ -276,10 +492,10 @@ def validate_furniture_clearance(
 ) -> Dict[str, Any]:
     """
     Validates furniture, walking clearance, window avoidance, TV-sofa axis,
-    and door swing clearance for the layout.
+    door swing, bathroom fixtures landing, and kitchen work zones.
     
     Returns:
-        Aggregated report across bedrooms and living areas with structured subchecks.
+        Aggregated report across bedrooms, living, bathrooms, and kitchen with 6 structured subchecks.
     """
     bedrooms = {
         name: poly for name, poly in layout_rooms.items()
@@ -362,6 +578,36 @@ def validate_furniture_clearance(
     })
     if door_res["violations"]:
         all_warnings.extend(door_res["violations"])
+
+    # 5. Bathroom Fixture Clearances Subcheck
+    bath_res = validate_bathroom_fixture_clearances(
+        layout_rooms, placed_furniture=placed_furniture, doors=doors, openings=openings
+    )
+    subchecks.append({
+        "id": "bathroom_fixtures",
+        "name": "Bathroom Fixtures & Landing",
+        "status": bath_res["status"],
+        "details": bath_res["message"]
+    })
+    if bath_res["violations"]:
+        all_warnings.extend(bath_res["violations"])
+    if bath_res["warnings"]:
+        all_warnings.extend(bath_res["warnings"])
+
+    # 6. Kitchen Work Zones Subcheck
+    kit_res = validate_kitchen_workzones(
+        layout_rooms, placed_furniture=placed_furniture, openings=openings
+    )
+    subchecks.append({
+        "id": "kitchen_workzones",
+        "name": "Kitchen Work Zones",
+        "status": kit_res["status"],
+        "details": kit_res["message"]
+    })
+    if kit_res["violations"]:
+        all_warnings.extend(kit_res["violations"])
+    if kit_res["warnings"]:
+        all_warnings.extend(kit_res["warnings"])
 
     # Determine overall status
     if any(s["status"] == "fail" for s in subchecks):

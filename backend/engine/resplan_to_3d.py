@@ -15,6 +15,19 @@ except ImportError:
     except ImportError:
         compute_protected_circulation_polygon = None
 
+try:
+    from furniture_grammars import solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones
+except ImportError:
+    try:
+        from engine.furniture_grammars import solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones
+    except ImportError:
+        try:
+            from backend.engine.furniture_grammars import solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones
+        except ImportError:
+            solve_living_room_group = None
+            solve_bathroom_fixtures = None
+            solve_kitchen_workzones = None
+
 # =========================
 # REALISTIC HOUSE CONFIG
 # =========================
@@ -365,130 +378,184 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
 
             wall_scores[w_side] = score
 
-        best_wall = max(wall_scores.items(), key=lambda x: x[1])[0]
-        if wall_scores[best_wall] < -5000.0:
-            # Fallback: pick any wall without entrance and least doors
-            cand_walls = [ws for ws in walls.keys() if ws != entrance_wall]
-            if cand_walls:
-                best_wall = min(cand_walls, key=lambda ws: sum(1 for dp in door_polys if dp.intersects(walls[ws].buffer(0.25))))
+        lr_group = None
+        if solve_living_room_group is not None:
+            lr_group = solve_living_room_group(
+                room_poly=poly,
+                door_polys=door_polys,
+                openings=openings,
+                windows=room_windows,
+                foyer_keepout=foyer_keepout,
+                protected_circ=protected_circ_poly,
+                wall_graph=wall_graph,
+                entrance_geom=entrance_geom,
+                scale=scale
+            )
+
+        if lr_group and lr_group.get("wall"):
+            best_wall = lr_group["wall"]
+            tv_center = lr_group["tv_center"]
+            tv_w = lr_group["tv_width"]
+            sofa_center = lr_group["sofa_center"]
+            sofa_w = lr_group["sofa_width"]
+            sofa_d = lr_group["sofa_depth"]
+            table_c = lr_group["table_center"]
+            rug_b = lr_group["rug_box"].bounds
+            table_b = lr_group["coffee_table_box"].bounds
+            tv_box = lr_group["tv_box"]
+            sofa_box = lr_group["sofa_box"]
+
+            if best_wall in ["south", "north"]:
+                is_south = (best_wall == "south")
+                tv_x = tv_center[0]
+                tv_y = miny + 0.05 if is_south else maxy - 0.45 * scale
+                
+                # 1. Floor-grounded TV Media Console
+                add_box_to_faces(all_faces, tv_x - tv_w/2.0, tv_x + tv_w/2.0, tv_y, tv_y + 0.40 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#334155")
+                
+                # 2. Wall Accent Backplate
+                pan_y1 = miny + 0.02 if is_south else maxy - 0.06
+                pan_y2 = miny + 0.06 if is_south else maxy - 0.02
+                add_box_to_faces(all_faces, tv_x - tv_w * 0.48, tv_x + tv_w * 0.48, pan_y1, pan_y2, FLOOR_THICKNESS + 0.40 * scale, FLOOR_THICKNESS + 1.50 * scale, "#1E293B")
+                
+                # 3. Wall-mounted TV Screen (seated eye level ~1.15m)
+                sw = tv_w * 0.42
+                screen_y1 = miny + 0.04 if is_south else maxy - 0.08
+                screen_y2 = miny + 0.07 if is_south else maxy - 0.05
+                add_box_to_faces(all_faces, tv_x - sw, tv_x + sw, screen_y1, screen_y2, FLOOR_THICKNESS + 0.82 * scale, FLOOR_THICKNESS + 1.45 * scale, "#0F172A")
+                
+                # 4. Area Rug
+                add_box_to_faces(all_faces, rug_b[0], rug_b[2], rug_b[1], rug_b[3], FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
+                
+                # 5. Coffee Table
+                add_box_to_faces(all_faces, table_b[0], table_b[2], table_b[1], table_b[3], FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
+                for lx in [table_b[0] + 0.05*scale, table_b[2] - 0.05*scale]:
+                    for ly in [table_b[1] + 0.05*scale, table_b[3] - 0.05*scale]:
+                        add_box_to_faces(all_faces, lx - 0.02*scale, lx + 0.02*scale, ly - 0.02*scale, ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.32*scale, "#5D4037")
+                
+                # 6. Coupled Sofa Facing TV
+                sx1, sy1, sx2, sy2 = sofa_box.bounds
+                back_y1 = sy2 - 0.12 * scale if is_south else sy1
+                back_y2 = sy2 if is_south else sy1 + 0.12 * scale
+                add_box_to_faces(all_faces, sx1, sx2, sy1, sy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+                add_box_to_faces(all_faces, sx1, sx2, back_y1, back_y2, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
+                add_box_to_faces(all_faces, sx1, sx1 + 0.12 * scale, sy1, sy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
+                add_box_to_faces(all_faces, sx2 - 0.12 * scale, sx2, sy1, sy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
+                
+                if placed_furniture_out is not None:
+                    placed_furniture_out.append({
+                        "room": name, "type": "tv", "poly": tv_box,
+                        "center": tv_center, "height": 1.45
+                    })
+                    placed_furniture_out.append({
+                        "room": name, "type": "sofa", "poly": sofa_box,
+                        "center": sofa_center, "height": 0.78
+                    })
+                    placed_furniture_out.append({
+                        "room": name, "type": "coffee_table", "poly": lr_group["coffee_table_box"],
+                        "center": table_c, "height": 0.36
+                    })
             else:
-                best_wall = "north"
-        
-        if best_wall in ["south", "north"]:
-            is_south = (best_wall == "south")
-            tw = min(0.9 * scale, w * 0.28)
-            tv_y = miny + 0.05 if is_south else maxy - 0.45 * scale
-            tv_center_y = miny + 0.25 * scale if is_south else maxy - 0.25 * scale
-            dist = min(2.4, max(1.8, (h - 0.8) * 0.55))
-            sofa_y = miny + dist if is_south else maxy - dist - 0.7 * scale
-
-            # Protect Foyer Arrival Zone: ensure sofa never blocks entrance
-            if foyer_keepout and not is_south:
-                foyer_top = foyer_keepout.bounds[3]
-                if sofa_y < foyer_top + 0.20:
-                    sofa_y = min(maxy - 1.2 * scale, foyer_top + 0.20)
-            elif foyer_keepout and is_south:
-                foyer_bottom = foyer_keepout.bounds[1]
-                if sofa_y + 0.7 * scale > foyer_bottom - 0.20:
-                    sofa_y = max(miny + 0.5 * scale, foyer_bottom - 0.20 - 0.7 * scale)
-
-            coffee_y = (tv_center_y + sofa_y) / 2.0
-            
-            # 1. Floor-grounded TV Media Console (width ~1.8m, depth 0.4m, height 0.42m)
-            add_box_to_faces(all_faces, cx - tw, cx + tw, tv_y, tv_y + 0.40 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#334155")
-            
-            # 2. Wall Accent Backplate (anchors TV to wall plane, eliminating air gap)
-            pan_y1 = miny + 0.02 if is_south else maxy - 0.06
-            pan_y2 = miny + 0.06 if is_south else maxy - 0.02
-            add_box_to_faces(all_faces, cx - tw * 0.95, cx + tw * 0.95, pan_y1, pan_y2, FLOOR_THICKNESS + 0.40 * scale, FLOOR_THICKNESS + 1.50 * scale, "#1E293B")
-            
-            # 3. Wall-mounted TV Screen (flush to wall plane, center height ~1.15m seated eye level)
-            sw = tw * 0.85
-            screen_y1 = miny + 0.04 if is_south else maxy - 0.08
-            screen_y2 = miny + 0.07 if is_south else maxy - 0.05
-            add_box_to_faces(all_faces, cx - sw, cx + sw, screen_y1, screen_y2, FLOOR_THICKNESS + 0.82 * scale, FLOOR_THICKNESS + 1.45 * scale, "#0F172A")
-            
-            # Area Rug
-            rw, rh = 1.3 * scale, 1.0 * scale
-            add_box_to_faces(all_faces, cx - rw, cx + rw, coffee_y - rh, coffee_y + rh, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
-            
-            # Coffee Table
-            cw_tab, ch_tab = 0.5 * scale, 0.3 * scale
-            add_box_to_faces(all_faces, cx - cw_tab, cx + cw_tab, coffee_y - ch_tab, coffee_y + ch_tab, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
-            for lx in [-cw_tab + 0.05*scale, cw_tab - 0.05*scale]:
-                for ly in [-ch_tab + 0.05*scale, ch_tab - 0.05*scale]:
-                    add_box_to_faces(all_faces, cx + lx - 0.02*scale, cx + lx + 0.02*scale, coffee_y + ly - 0.02*scale, coffee_y + ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.32*scale, "#5D4037")
-                    
-            # Sofa Facing TV (opposite the TV wall)
-            cw, cd = 1.1 * scale, 0.4 * scale
-            back_y1 = sofa_y + 0.3 * scale if is_south else sofa_y
-            back_y2 = sofa_y + 0.4 * scale if is_south else sofa_y + 0.1 * scale
-            add_box_to_faces(all_faces, cx - cw, cx + cw, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
-            add_box_to_faces(all_faces, cx - cw, cx + cw, back_y1, back_y2, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
-            add_box_to_faces(all_faces, cx - cw - 0.1 * scale, cx - cw, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
-            add_box_to_faces(all_faces, cx + cw, cx + cw + 0.1 * scale, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
-            
-            if placed_furniture_out is not None:
-                placed_furniture_out.append({
-                    "room": name, "type": "tv", "poly": box(cx - tw, min(tv_y, screen_y1), cx + tw, max(tv_y + 0.4*scale, screen_y2)),
-                    "center": (cx, tv_center_y), "height": 1.45
-                })
-                placed_furniture_out.append({
-                    "room": name, "type": "sofa", "poly": box(cx - cw - 0.1*scale, sofa_y, cx + cw + 0.1*scale, sofa_y + cd),
-                    "center": (cx, sofa_y + cd/2.0), "height": 0.78
-                })
+                is_west = (best_wall == "west")
+                tv_y = tv_center[1]
+                tv_x = minx + 0.05 if is_west else maxx - 0.45 * scale
+                
+                # 1. Floor-grounded TV Media Console
+                add_box_to_faces(all_faces, tv_x, tv_x + 0.40 * scale, tv_y - tv_w/2.0, tv_y + tv_w/2.0, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#334155")
+                
+                # 2. Wall Accent Backplate
+                pan_x1 = minx + 0.02 if is_west else maxx - 0.06
+                pan_x2 = minx + 0.06 if is_west else maxx - 0.02
+                add_box_to_faces(all_faces, pan_x1, pan_x2, tv_y - tv_w * 0.48, tv_y + tv_w * 0.48, FLOOR_THICKNESS + 0.40 * scale, FLOOR_THICKNESS + 1.50 * scale, "#1E293B")
+                
+                # 3. Wall-mounted TV Screen
+                sh = tv_w * 0.42
+                screen_x1 = minx + 0.04 if is_west else maxx - 0.08
+                screen_x2 = minx + 0.07 if is_west else maxx - 0.05
+                add_box_to_faces(all_faces, screen_x1, screen_x2, tv_y - sh, tv_y + sh, FLOOR_THICKNESS + 0.82 * scale, FLOOR_THICKNESS + 1.45 * scale, "#0F172A")
+                
+                # 4. Area Rug
+                add_box_to_faces(all_faces, rug_b[0], rug_b[2], rug_b[1], rug_b[3], FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
+                
+                # 5. Coffee Table
+                add_box_to_faces(all_faces, table_b[0], table_b[2], table_b[1], table_b[3], FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
+                
+                # 6. Coupled Sofa Facing East/West
+                sx1, sy1, sx2, sy2 = sofa_box.bounds
+                back_x1 = sx2 - 0.12 * scale if is_west else sx1
+                back_x2 = sx2 if is_west else sx1 + 0.12 * scale
+                add_box_to_faces(all_faces, sx1, sx2, sy1, sy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+                add_box_to_faces(all_faces, back_x1, back_x2, sy1, sy2, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
+                add_box_to_faces(all_faces, sx1, sx2, sy1, sy1 + 0.12 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
+                add_box_to_faces(all_faces, sx1, sx2, sy2 - 0.12 * scale, sy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.55 * scale, "#334155")
+                
+                if placed_furniture_out is not None:
+                    placed_furniture_out.append({
+                        "room": name, "type": "tv", "poly": tv_box,
+                        "center": tv_center, "height": 1.45
+                    })
+                    placed_furniture_out.append({
+                        "room": name, "type": "sofa", "poly": sofa_box,
+                        "center": sofa_center, "height": 0.78
+                    })
+                    placed_furniture_out.append({
+                        "room": name, "type": "coffee_table", "poly": lr_group["coffee_table_box"],
+                        "center": table_c, "height": 0.36
+                    })
         else:
-            # West or East TV Wall
-            is_west = (best_wall == "west")
-            th = min(0.9 * scale, h * 0.28)
-            tv_x = minx + 0.05 if is_west else maxx - 0.45 * scale
-            tv_center_x = minx + 0.25 * scale if is_west else maxx - 0.25 * scale
-            dist = min(2.4, max(1.8, (w - 0.8) * 0.55))
-            sofa_x = minx + dist if is_west else maxx - dist - 0.7 * scale
+            best_wall = max(wall_scores.items(), key=lambda x: x[1])[0]
+            if wall_scores[best_wall] < -5000.0:
+                cand_walls = [ws for ws in walls.keys() if ws != entrance_wall]
+                if cand_walls:
+                    best_wall = min(cand_walls, key=lambda ws: sum(1 for dp in door_polys if dp.intersects(walls[ws].buffer(0.25))))
+                else:
+                    best_wall = "north"
+            
+            if best_wall in ["south", "north"]:
+                is_south = (best_wall == "south")
+                tw = min(0.9 * scale, w * 0.28)
+                tv_y = miny + 0.05 if is_south else maxy - 0.45 * scale
+                tv_center_y = miny + 0.25 * scale if is_south else maxy - 0.25 * scale
+                dist = min(2.4, max(1.8, (h - 0.8) * 0.55))
+                sofa_y = miny + dist if is_south else maxy - dist - 0.7 * scale
 
-            # If entrance is on South wall, adjust conversation center north of foyer keep-out
-            cy_furniture = cy
-            if foyer_keepout and entrance_wall == "south":
-                foyer_top = foyer_keepout.bounds[3]
-                if cy - 1.2 * scale < foyer_top:
-                    cy_furniture = min(maxy - 1.3 * scale, foyer_top + 1.2 * scale)
+                if foyer_keepout and not is_south:
+                    foyer_top = foyer_keepout.bounds[3]
+                    if sofa_y < foyer_top + 0.20:
+                        sofa_y = min(maxy - 1.2 * scale, foyer_top + 0.20)
+                elif foyer_keepout and is_south:
+                    foyer_bottom = foyer_keepout.bounds[1]
+                    if sofa_y + 0.7 * scale > foyer_bottom - 0.20:
+                        sofa_y = max(miny + 0.5 * scale, foyer_bottom - 0.20 - 0.7 * scale)
 
-            coffee_x = (cx + sofa_x) / 2.0
-            
-            # 1. Floor-grounded TV Media Console
-            add_box_to_faces(all_faces, tv_x, tv_x + 0.40 * scale, cy_furniture - th, cy_furniture + th, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#334155")
-            
-            # 2. Wall Accent Backplate
-            pan_x1 = minx + 0.02 if is_west else maxx - 0.06
-            pan_x2 = minx + 0.06 if is_west else maxx - 0.02
-            add_box_to_faces(all_faces, pan_x1, pan_x2, cy_furniture - th * 0.95, cy_furniture + th * 0.95, FLOOR_THICKNESS + 0.40 * scale, FLOOR_THICKNESS + 1.50 * scale, "#1E293B")
-            
-            # 3. Mounted TV Screen (seated eye level)
-            sh = th * 0.85
-            screen_x1 = minx + 0.04 if is_west else maxx - 0.08
-            screen_x2 = minx + 0.07 if is_west else maxx - 0.05
-            add_box_to_faces(all_faces, screen_x1, screen_x2, cy_furniture - sh, cy_furniture + sh, FLOOR_THICKNESS + 0.82 * scale, FLOOR_THICKNESS + 1.45 * scale, "#0F172A")
-            
-            # Area Rug & Coffee Table
-            add_box_to_faces(all_faces, coffee_x - 0.8 * scale, coffee_x + 0.8 * scale, cy_furniture - 1.2 * scale, cy_furniture + 1.2 * scale, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
-            add_box_to_faces(all_faces, coffee_x - 0.3 * scale, coffee_x + 0.3 * scale, cy_furniture - 0.5 * scale, cy_furniture + 0.5 * scale, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
-            
-            # Sofa Facing West/East
-            cd = 0.4 * scale
-            back_x1 = sofa_x + 0.3 * scale if is_west else sofa_x
-            back_x2 = sofa_x + 0.4 * scale if is_west else sofa_x + 0.1 * scale
-            add_box_to_faces(all_faces, sofa_x, sofa_x + cd, cy_furniture - 1.0 * scale, cy_furniture + 1.0 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
-            add_box_to_faces(all_faces, back_x1, back_x2, cy_furniture - 1.0 * scale, cy_furniture + 1.0 * scale, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
-            
-            if placed_furniture_out is not None:
-                placed_furniture_out.append({
-                    "room": name, "type": "tv", "poly": box(min(tv_x, screen_x1), cy_furniture - th, max(tv_x + 0.4*scale, screen_x2), cy_furniture + th),
-                    "center": (tv_center_x, cy_furniture), "height": 1.45
-                })
-                placed_furniture_out.append({
-                    "room": name, "type": "sofa", "poly": box(sofa_x, cy_furniture - 1.0*scale, sofa_x + cd, cy_furniture + 1.0*scale),
-                    "center": (sofa_x + cd/2.0, cy_furniture), "height": 0.78
-                })
+                coffee_y = (tv_center_y + sofa_y) / 2.0
+                add_box_to_faces(all_faces, cx - tw, cx + tw, tv_y, tv_y + 0.40 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#334155")
+                add_box_to_faces(all_faces, cx - tw * 0.85, cx + tw * 0.85, tv_y + 0.02, tv_y + 0.05, FLOOR_THICKNESS + 0.82 * scale, FLOOR_THICKNESS + 1.45 * scale, "#0F172A")
+                add_box_to_faces(all_faces, cx - 1.3*scale, cx + 1.3*scale, coffee_y - 1.0*scale, coffee_y + 1.0*scale, FLOOR_THICKNESS + 0.005, FLOOR_THICKNESS + 0.01, "#E2E8F0")
+                add_box_to_faces(all_faces, cx - 0.5*scale, cx + 0.5*scale, coffee_y - 0.3*scale, coffee_y + 0.3*scale, FLOOR_THICKNESS + 0.32 * scale, FLOOR_THICKNESS + 0.36 * scale, "#D7CCC8")
+                
+                cw, cd = 1.1 * scale, 0.4 * scale
+                back_y1 = sofa_y + 0.3 * scale if is_south else sofa_y
+                back_y2 = sofa_y + 0.4 * scale if is_south else sofa_y + 0.1 * scale
+                add_box_to_faces(all_faces, cx - cw, cx + cw, sofa_y, sofa_y + cd, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+                add_box_to_faces(all_faces, cx - cw, cx + cw, back_y1, back_y2, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#334155")
+                
+                if placed_furniture_out is not None:
+                    placed_furniture_out.append({"room": name, "type": "tv", "poly": box(cx - tw, tv_y, cx + tw, tv_y + 0.4*scale), "center": (cx, tv_center_y), "height": 1.45})
+                    placed_furniture_out.append({"room": name, "type": "sofa", "poly": box(cx - cw, sofa_y, cx + cw, sofa_y + cd), "center": (cx, sofa_y + cd/2.0), "height": 0.78})
+            else:
+                is_west = (best_wall == "west")
+                th = min(0.9 * scale, h * 0.28)
+                tv_x = minx + 0.05 if is_west else maxx - 0.45 * scale
+                dist = min(2.4, max(1.8, (w - 0.8) * 0.55))
+                sofa_x = minx + dist if is_west else maxx - dist - 0.7 * scale
+                cy_furniture = cy
+                add_box_to_faces(all_faces, tv_x, tv_x + 0.40 * scale, cy_furniture - th, cy_furniture + th, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#334155")
+                cd = 0.4 * scale
+                add_box_to_faces(all_faces, sofa_x, sofa_x + cd, cy_furniture - 1.0 * scale, cy_furniture + 1.0 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#475569")
+                if placed_furniture_out is not None:
+                    placed_furniture_out.append({"room": name, "type": "tv", "poly": box(tv_x, cy_furniture - th, tv_x + 0.4*scale, cy_furniture + th), "center": (tv_x, cy_furniture), "height": 1.45})
+                    placed_furniture_out.append({"room": name, "type": "sofa", "poly": box(sofa_x, cy_furniture - 1.0*scale, sofa_x + cd, cy_furniture + 1.0*scale), "center": (sofa_x + cd/2.0, cy_furniture), "height": 0.78})
 
         # Integrated Dining Zone if spacious and no separate dining room
         has_dining_room = any("dining" in r.lower() for r in all_rooms.keys())
@@ -528,7 +595,10 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
                     continue
                     
                 # Conflict with TV / Sofa area
-                if best_wall in ["south", "north"]:
+                if lr_group and "tv_box" in lr_group and "sofa_box" in lr_group:
+                    if env.intersects(tv_box.buffer(0.40)) or env.intersects(sofa_box.buffer(0.40)):
+                        continue
+                elif best_wall in ["south", "north"]:
                     if abs(cy_cand - sofa_y) < 1.0 or abs(cy_cand - tv_y) < 1.0:
                         continue
                 else:
@@ -757,79 +827,128 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
                     placed_furniture_out.append({"room": name, "type": "wardrobe", "poly": w_box, "height": 2.15})
         
     elif "bathroom" in name or "bath" in name or "toilet" in name:
-        # Modern Bathroom Suite: Vanity, Toilet, and Shower/Tub
-        door_closest = "bottom"
-        if door_polys:
-            for door in door_polys:
-                if door.intersects(poly.buffer(0.15)):
-                    dx, dy = door.centroid.x, door.centroid.y
-                    dists = {"top": abs(dy - maxy), "bottom": abs(dy - miny), "left": abs(dx - minx), "right": abs(dx - maxx)}
-                    door_closest = min(dists, key=dists.get)
+        bath_sol = None
+        if solve_bathroom_fixtures is not None:
+            bath_sol = solve_bathroom_fixtures(
+                room_poly=poly,
+                door_polys=door_polys,
+                windows=room_windows,
+                wall_graph=wall_graph,
+                scale=scale
+            )
 
-        door_near_top = (door_closest == "top")
-        door_near_right = (door_closest == "right")
-        
-        fix_y = miny + 0.15 if door_near_top else maxy - 0.55
-        
-        # 1. Floating Vanity Unit with Basin & Mirror (placed along back/fixture wall)
-        vx = minx + 0.15
-        add_box_to_faces(all_faces, vx, vx + 0.7 * scale, fix_y, fix_y + 0.45 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.82 * scale, "#8D6E63")
-        add_box_to_faces(all_faces, vx + 0.1*scale, vx + 0.6*scale, fix_y + 0.05*scale, fix_y + 0.4*scale, FLOOR_THICKNESS + 0.82*scale, FLOOR_THICKNESS + 0.87*scale, "#FFFFFF")
-        mirror_y1 = miny + 0.04 if door_near_top else maxy - 0.08
-        mirror_y2 = miny + 0.08 if door_near_top else maxy - 0.04
-        add_box_to_faces(all_faces, vx + 0.1*scale, vx + 0.6*scale, mirror_y1, mirror_y2, FLOOR_THICKNESS + 1.1*scale, FLOOR_THICKNESS + 1.7*scale, "#CBD5E1")
-        
-        # 2. Porcelain Toilet Bowl & Cistern
-        tx = cx
-        add_box_to_faces(all_faces, tx - 0.18*scale, tx + 0.18*scale, fix_y, fix_y + 0.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4*scale, "#FFFFFF")
-        cistern_y1 = miny + 0.04 if door_near_top else maxy - 0.2*scale
-        cistern_y2 = miny + 0.2*scale if door_near_top else maxy - 0.04
-        add_box_to_faces(all_faces, tx - 0.2*scale, tx + 0.2*scale, cistern_y1, cistern_y2, FLOOR_THICKNESS + 0.4*scale, FLOOR_THICKNESS + 0.75*scale, "#FFFFFF")
-        
-        # 3. Walk-in Shower with Tempered Glass Screen
-        if door_near_right:
-            sx1, sx2 = minx + 0.1, minx + 1.0 * scale
-            screen_x = sx2
+        if bath_sol:
+            vb = bath_sol["vanity_box"].bounds
+            tb = bath_sol["wc_box"].bounds
+            sb = bath_sol["shower_box"].bounds
+            screen_x = bath_sol.get("shower_screen_x", (sb[0] + sb[2])/2.0)
+
+            # 1. Floating Vanity Unit with Basin & Mirror
+            add_box_to_faces(all_faces, vb[0], vb[2], vb[1], vb[3], FLOOR_THICKNESS + 0.18 * scale, FLOOR_THICKNESS + 0.82 * scale, "#8D6E63")
+            add_box_to_faces(all_faces, vb[0] + 0.08*scale, vb[2] - 0.08*scale, vb[1] + 0.06*scale, vb[3] - 0.06*scale, FLOOR_THICKNESS + 0.82 * scale, FLOOR_THICKNESS + 0.86 * scale, "#FFFFFF")
+            # Mirror on wall above vanity
+            m_y1 = max(miny + 0.02, vb[3] - 0.04) if abs(vb[3] - maxy) < 0.2 else (miny + 0.02 if abs(vb[1] - miny) < 0.2 else vb[1])
+            m_y2 = m_y1 + 0.04
+            add_box_to_faces(all_faces, vb[0] + 0.05*scale, vb[2] - 0.05*scale, m_y1, m_y2, FLOOR_THICKNESS + 1.05 * scale, FLOOR_THICKNESS + 1.70 * scale, "#CBD5E1")
+
+            # 2. Porcelain Toilet (WC) Bowl & Cistern
+            add_box_to_faces(all_faces, tb[0], tb[2], tb[1], tb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#FFFFFF")
+            # Cistern at wall end
+            if abs(tb[3] - maxy) < 0.2:
+                cis_y1, cis_y2 = tb[3] - 0.22*scale, tb[3]
+            elif abs(tb[1] - miny) < 0.2:
+                cis_y1, cis_y2 = tb[1], tb[1] + 0.22*scale
+            else:
+                cis_y1, cis_y2 = (tb[1] + tb[3])/2.0 - 0.11*scale, (tb[1] + tb[3])/2.0 + 0.11*scale
+            add_box_to_faces(all_faces, tb[0], tb[2], cis_y1, cis_y2, FLOOR_THICKNESS + 0.42 * scale, FLOOR_THICKNESS + 0.78 * scale, "#FFFFFF")
+
+            # 3. Parameterized Walk-In Shower Tray & Glass Enclosure
+            add_box_to_faces(all_faces, sb[0], sb[2], sb[1], sb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.04, "#E2E8F0")
+            # Vertical Tempered Glass Partition Screen (alpha 0.45)
+            add_box_to_faces(all_faces, screen_x - 0.015, screen_x + 0.015, sb[1], sb[3], FLOOR_THICKNESS + 0.04, FLOOR_THICKNESS + 1.95 * scale, "#93C5FD", alpha=0.45)
+            # Chrome showerhead & column
+            sc_mid_x = (sb[0] + sb[2]) / 2.0
+            sc_mid_y = sb[3] - 0.05 if abs(sb[3] - maxy) < 0.2 else sb[1] + 0.05
+            add_box_to_faces(all_faces, sc_mid_x - 0.03*scale, sc_mid_x + 0.03*scale, sc_mid_y - 0.03*scale, sc_mid_y + 0.03*scale, FLOOR_THICKNESS + 1.10 * scale, FLOOR_THICKNESS + 2.05 * scale, "#94A3B8")
+
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({"room": name, "type": "vanity", "poly": bath_sol["vanity_box"], "height": 0.86})
+                placed_furniture_out.append({"room": name, "type": "toilet", "poly": bath_sol["wc_box"], "height": 0.78})
+                placed_furniture_out.append({"room": name, "type": "shower", "poly": bath_sol["shower_box"], "height": 1.95})
         else:
-            sx1, sx2 = maxx - 1.0 * scale, maxx - 0.1
-            screen_x = sx1
+            # Fallback bathroom suite
+            vx = minx + 0.15
+            fix_y = miny + 0.15
+            add_box_to_faces(all_faces, vx, vx + 0.7 * scale, fix_y, fix_y + 0.45 * scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.82 * scale, "#8D6E63")
+            add_box_to_faces(all_faces, cx - 0.18*scale, cx + 0.18*scale, fix_y, fix_y + 0.4*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.4*scale, "#FFFFFF")
+            add_box_to_faces(all_faces, maxx - 0.95*scale, maxx - 0.05, maxy - 0.95*scale, maxy - 0.05, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.04*scale, "#E2E8F0")
+            add_box_to_faces(all_faces, maxx - 0.95*scale - 0.02, maxx - 0.95*scale + 0.02, maxy - 0.95*scale, maxy - 0.05, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.95*scale, "#93C5FD", alpha=0.45)
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({"room": name, "type": "vanity", "poly": box(vx, fix_y, vx + 0.7*scale, fix_y + 0.45*scale), "height": 0.82})
+                placed_furniture_out.append({"room": name, "type": "toilet", "poly": box(cx - 0.2*scale, fix_y, cx + 0.2*scale, fix_y + 0.4*scale), "height": 0.75})
+                placed_furniture_out.append({"room": name, "type": "shower", "poly": box(maxx - 0.95*scale, maxy - 0.95*scale, maxx - 0.05, maxy - 0.05), "height": 1.95})
 
-        add_box_to_faces(all_faces, sx1, sx2, miny + 0.1, maxy - 0.1, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.04*scale, "#E2E8F0")
-        add_box_to_faces(all_faces, screen_x - 0.02, screen_x + 0.02, miny + 0.1, maxy - 0.4, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.95*scale, "#93C5FD", alpha=0.4)
-        
     elif "kitchen" in name:
-        # Kitchen Work Triangle: Refrigerator -> Countertop -> Sink -> Cooktop
-        door_near_bottom = False
-        if door_polys:
-            for door in door_polys:
-                if door.intersects(poly.buffer(0.15)):
-                    dy = door.centroid.y
-                    if abs(dy - miny) < abs(dy - maxy):
-                        door_near_bottom = True
+        k_sol = None
+        if solve_kitchen_workzones is not None:
+            k_sol = solve_kitchen_workzones(
+                room_poly=poly,
+                door_polys=door_polys,
+                openings=openings,
+                windows=room_windows,
+                wall_graph=wall_graph,
+                scale=scale
+            )
 
-        counter_y_min, counter_y_max = (maxy - 0.65, maxy - 0.05) if door_near_bottom else (miny + 0.05, miny + 0.65)
-        
-        # Counter cabinetry and quartz countertop
-        add_box_to_faces(all_faces, minx + 0.8, maxx - 0.1, counter_y_min, counter_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85 * scale, "#334155")
-        add_box_to_faces(all_faces, minx + 0.8, maxx - 0.1, counter_y_min - 0.02, counter_y_max + 0.02, FLOOR_THICKNESS + 0.83 * scale, FLOOR_THICKNESS + 0.87 * scale, "#F8FAFC")
-        
-        # Refrigerator Tower (width 0.75m, height 1.85m)
-        add_box_to_faces(all_faces, minx + 0.05, minx + 0.75, counter_y_min, counter_y_max + 0.05, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.85 * scale, "#94A3B8")
-        
-        # Inset Sink
-        sink_cx = minx + 1.5 * scale
-        add_box_to_faces(all_faces, sink_cx - 0.3*scale, sink_cx + 0.3*scale, (counter_y_min + counter_y_max)/2 - 0.2*scale, (counter_y_min + counter_y_max)/2 + 0.2*scale, FLOOR_THICKNESS + 0.84*scale, FLOOR_THICKNESS + 0.88*scale, "#CBD5E1")
-        
-        # Inset 4-Burner Cooktop
-        stove_cx = maxx - 0.8 * scale
-        add_box_to_faces(all_faces, stove_cx - 0.35*scale, stove_cx + 0.35*scale, (counter_y_min + counter_y_max)/2 - 0.25*scale, (counter_y_min + counter_y_max)/2 + 0.25*scale, FLOOR_THICKNESS + 0.85*scale, FLOOR_THICKNESS + 0.89*scale, "#0F172A")
-        # Overhead Range Hood
-        add_box_to_faces(all_faces, stove_cx - 0.35*scale, stove_cx + 0.35*scale, counter_y_min, counter_y_max, FLOOR_THICKNESS + 1.65*scale, FLOOR_THICKNESS + 1.95*scale, "#64748B")
-        
-        # Island / Breakfast Bar if spacious
-        if h >= 3.2:
-            island_y = cy
-            add_box_to_faces(all_faces, cx - 0.8*scale, cx + 0.8*scale, island_y - 0.35*scale, island_y + 0.35*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.88*scale, "#CBD5E1")
+        if k_sol:
+            cb = k_sol["counter_box"].bounds
+            fb = k_sol["fridge_box"].bounds
+            c_wall = k_sol["counter_wall"]
+            sp = k_sol["sink_pos"]
+            ckp = k_sol["cooktop_pos"]
+
+            # 1. Base cabinetry and quartz countertop
+            add_box_to_faces(all_faces, cb[0], cb[2], cb[1], cb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.84 * scale, "#334155")
+            add_box_to_faces(all_faces, cb[0] - 0.02, cb[2] + 0.02, cb[1] - 0.02, cb[3] + 0.02, FLOOR_THICKNESS + 0.84 * scale, FLOOR_THICKNESS + 0.88 * scale, "#F8FAFC")
+
+            # 2. Refrigerator Tower (width 0.75m, height 1.85m)
+            add_box_to_faces(all_faces, fb[0], fb[2], fb[1], fb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.85 * scale, "#94A3B8")
+
+            # 3. Inset Sink & Gooseneck Faucet
+            add_box_to_faces(all_faces, sp[0] - 0.35*scale, sp[0] + 0.35*scale, sp[1] - 0.22*scale, sp[1] + 0.22*scale, FLOOR_THICKNESS + 0.85 * scale, FLOOR_THICKNESS + 0.89 * scale, "#CBD5E1")
+            add_box_to_faces(all_faces, sp[0] - 0.02*scale, sp[0] + 0.02*scale, sp[1] - 0.02*scale, sp[1] + 0.02*scale, FLOOR_THICKNESS + 0.88 * scale, FLOOR_THICKNESS + 1.15 * scale, "#94A3B8")
+
+            # 4. Inset 4-Burner Cooktop & Overhead Range Hood
+            add_box_to_faces(all_faces, ckp[0] - 0.35*scale, ckp[0] + 0.35*scale, ckp[1] - 0.25*scale, ckp[1] + 0.25*scale, FLOOR_THICKNESS + 0.85 * scale, FLOOR_THICKNESS + 0.89 * scale, "#0F172A")
+            add_box_to_faces(all_faces, ckp[0] - 0.38*scale, ckp[0] + 0.38*scale, ckp[1] - 0.28*scale, ckp[1] + 0.28*scale, FLOOR_THICKNESS + 1.65 * scale, FLOOR_THICKNESS + 1.95 * scale, "#64748B")
+
+            # 5. Upper Wall Cabinets
+            if c_wall == "north":
+                add_box_to_faces(all_faces, cb[0] + 0.8*scale, cb[2], maxy - 0.40*scale, maxy - 0.05, FLOOR_THICKNESS + 1.50*scale, FLOOR_THICKNESS + 2.15*scale, "#475569")
+            elif c_wall == "south":
+                add_box_to_faces(all_faces, cb[0] + 0.8*scale, cb[2], miny + 0.05, miny + 0.40*scale, FLOOR_THICKNESS + 1.50*scale, FLOOR_THICKNESS + 2.15*scale, "#475569")
+            elif c_wall == "west":
+                add_box_to_faces(all_faces, minx + 0.05, minx + 0.40*scale, cb[1] + 0.8*scale, cb[3], FLOOR_THICKNESS + 1.50*scale, FLOOR_THICKNESS + 2.15*scale, "#475569")
+            else:
+                add_box_to_faces(all_faces, maxx - 0.40*scale, maxx - 0.05, cb[1] + 0.8*scale, cb[3], FLOOR_THICKNESS + 1.50*scale, FLOOR_THICKNESS + 2.15*scale, "#475569")
+
+            # 6. Island / Breakfast Bar if spacious
+            if min(w, h) >= 3.2:
+                island_y = cy
+                add_box_to_faces(all_faces, cx - 0.7*scale, cx + 0.7*scale, island_y - 0.35*scale, island_y + 0.35*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.88*scale, "#CBD5E1")
+
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({"room": name, "type": "kitchen_counter", "poly": k_sol["counter_box"], "height": 0.88})
+                placed_furniture_out.append({"room": name, "type": "fridge", "poly": k_sol["fridge_box"], "height": 1.85})
+                placed_furniture_out.append({"room": name, "type": "sink", "poly": k_sol["sink_box"], "height": 0.89})
+                placed_furniture_out.append({"room": name, "type": "cooktop", "poly": k_sol["cooktop_box"], "height": 1.95})
+        else:
+            counter_y_min, counter_y_max = (maxy - 0.65, maxy - 0.05) if door_near_bottom else (miny + 0.05, miny + 0.65)
+            add_box_to_faces(all_faces, minx + 0.8, maxx - 0.1, counter_y_min, counter_y_max, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.85 * scale, "#334155")
+            add_box_to_faces(all_faces, minx + 0.05, minx + 0.75, counter_y_min, counter_y_max + 0.05, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.85 * scale, "#94A3B8")
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({"room": name, "type": "kitchen_counter", "poly": box(minx + 0.8, counter_y_min, maxx - 0.1, counter_y_max), "height": 0.85})
+                placed_furniture_out.append({"room": name, "type": "fridge", "poly": box(minx + 0.05, counter_y_min, minx + 0.75, counter_y_max), "height": 1.85})
             
     elif "dining" in name:
         # 6-Seater Dining Table and Chairs
@@ -1167,7 +1286,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                                 idx, idy = ix2 - ix1, iy2 - iy1
                                 ilen = (idx**2 + idy**2)**0.5
                                 
-                                if 0.55 <= ilen <= 1.15:
+                                if 0.55 <= ilen <= 2.50:
                                     wall_dir = np.array([idx, idy]) / ilen
                                     perp_dir = np.array([-wall_dir[1], wall_dir[0]])
                                     center = np.array([(ix1+ix2)/2, (iy1+iy2)/2])
@@ -1182,9 +1301,11 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                                     c4 = center + wall_dir * d_half_width - perp_dir * d_half_thick
                                     
                                     door_poly = Polygon([tuple(c1), tuple(c2), tuple(c3), tuple(c4)])
+                                    is_cased = (ilen > 1.15)
                                     generated_door_panels.append({
                                         "poly": door_poly,
                                         "is_exterior": is_exterior,
+                                        "is_cased": is_cased,
                                         "center": center,
                                         "wall_dir": wall_dir,
                                         "perp_dir": perp_dir,
@@ -1234,6 +1355,10 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
             ])
             for f in _extrude_polygon_vertical_shell(jb_poly, FLOOR_THICKNESS, FLOOR_THICKNESS + DOOR_HEIGHT):
                 all_faces.append({"vertices": f, "color": "#334155", "alpha": 1.0})
+
+        if d_item.get("is_cased", False):
+            # Cased portal: Trimmed jambs and header lintel are rendered, completely open walkthrough!
+            continue
 
         if is_front:
             # Front Entrance Door: Rich architectural solid slab with vision slit and pull bar

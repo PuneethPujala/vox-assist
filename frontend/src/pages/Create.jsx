@@ -311,21 +311,28 @@ const ArchitecturalFeasibilityCard = ({ archCheck }) => {
                                 {chk.subchecks && chk.subchecks.length > 0 && (
                                     <div className="mt-2 pl-2 border-l border-stone-200 dark:border-stone-800 space-y-1">
                                         {chk.subchecks.map((sc) => (
-                                            <div key={sc.id} className="flex items-center justify-between text-[9.5px]">
-                                                <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300">
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${
-                                                        sc.status === 'pass' ? 'bg-emerald-500' :
-                                                        sc.status === 'warn' ? 'bg-amber-500' : 'bg-red-500'
-                                                    }`} />
-                                                    <span className="font-medium">{sc.name}</span>
+                                            <div key={sc.id} className="py-0.5">
+                                                <div className="flex items-center justify-between text-[9.5px]">
+                                                    <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300">
+                                                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                                            sc.status === 'pass' ? 'bg-emerald-500' :
+                                                            sc.status === 'warn' ? 'bg-amber-500' : 'bg-red-500'
+                                                        }`} />
+                                                        <span className="font-medium">{sc.name}</span>
+                                                    </div>
+                                                    <span className={`text-[8.5px] uppercase font-mono px-1 rounded ${
+                                                        sc.status === 'pass' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' :
+                                                        sc.status === 'warn' ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40' :
+                                                        'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40'
+                                                    }`}>
+                                                        {sc.status}
+                                                    </span>
                                                 </div>
-                                                <span className={`text-[8.5px] uppercase font-mono px-1 rounded ${
-                                                    sc.status === 'pass' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' :
-                                                    sc.status === 'warn' ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40' :
-                                                    'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40'
-                                                }`}>
-                                                    {sc.status}
-                                                </span>
+                                                {sc.details && sc.status !== 'pass' && (
+                                                    <p className="text-[8.5px] text-stone-400 dark:text-stone-500 pl-3 leading-tight mt-0.5 font-mono">
+                                                        {sc.details}
+                                                    </p>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
