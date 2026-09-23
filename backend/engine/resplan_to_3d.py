@@ -969,28 +969,56 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
 
 def _compute_wall_graph(rooms):
     """
-    Build a topological graph of walls.
+    Build a topological graph of atomic wall segments.
+    Nodally splits walls at all room intersections and T-junctions
+    so interior shared walls are never misclassified as exterior.
     Returns:
         edges: dict mapping (p1, p2) -> list of room_names sharing this edge
     """
-    edge_to_rooms = defaultdict(list)
+    valid_rooms = {k: v for k, v in rooms.items() if v and not v.is_empty}
+    if not valid_rooms:
+        return defaultdict(list)
+        
+    boundaries = [r.boundary for r in valid_rooms.values()]
+    union_lines = unary_union(boundaries)
     
-    for room_name, poly in rooms.items():
-        if poly.is_empty: continue
-        coords = list(poly.exterior.coords)
+    geoms = union_lines.geoms if hasattr(union_lines, 'geoms') else [union_lines]
+    segments = set()
+    for g in geoms:
+        coords = list(g.coords)
         for i in range(len(coords) - 1):
-            p1 = coords[i]
-            p2 = coords[i+1]
-            
-            # Canonicalize edge key (sort points)
-            if p1 > p2:
-                key = (p2, p1)
-            else:
-                key = (p1, p2)
+            p1, p2 = coords[i], coords[i+1]
+            p1_r = (round(p1[0], 4), round(p1[1], 4))
+            p2_r = (round(p2[0], 4), round(p2[1], 4))
+            if p1_r != p2_r:
+                key = (min(p1_r, p2_r), max(p1_r, p2_r))
+                segments.add(key)
                 
-            edge_to_rooms[key].append(room_name)
-            
+    edge_to_rooms = defaultdict(list)
+    for p1, p2 in sorted(segments):
+        seg = LineString([p1, p2])
+        if seg.length < 0.05:
+            continue
+        mid = seg.interpolate(0.5, normalized=True)
+        for r_name, poly in valid_rooms.items():
+            if poly.boundary.distance(mid) < 0.02:
+                edge_to_rooms[(p1, p2)].append(r_name)
+                
     return edge_to_rooms
+
+
+def _is_wall_exterior(base_line, sharing_rooms, exterior_boundary):
+    """
+    Determines if a wall segment is a true exterior wall:
+    1. Only 1 room can touch an exterior wall.
+    2. The segment midpoint must be within 0.05m of the whole-building envelope boundary.
+    """
+    if len(sharing_rooms) != 1:
+        return False
+    if exterior_boundary is None or exterior_boundary.is_empty:
+        return len(sharing_rooms) == 1
+    mid = base_line.interpolate(0.5, normalized=True)
+    return exterior_boundary.distance(mid) < 0.05
 
 
 def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.ply"):
@@ -1040,6 +1068,10 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
 
     # 2. Build Wall Topology & Precompute Windows & Keepouts
     print(" Building wall topology and precomputing openings...")
+    valid_rooms = {k: v for k, v in rooms.items() if v and not v.is_empty}
+    building_envelope = unary_union(list(valid_rooms.values())) if valid_rooms else None
+    exterior_boundary = building_envelope.boundary if building_envelope and not building_envelope.is_empty else None
+
     edge_to_rooms = _compute_wall_graph(rooms)
 
     # Precompute exterior windows & opening exclusion polygons
@@ -1051,7 +1083,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
     for (p1, p2), sharing_rooms in edge_to_rooms.items():
         base_line = LineString([p1, p2])
         if base_line.length < 0.1: continue
-        is_exterior = (len(sharing_rooms) == 1)
+        is_exterior = _is_wall_exterior(base_line, sharing_rooms, exterior_boundary)
         if not is_exterior: continue
 
         r_name = sharing_rooms[0].lower()
@@ -1204,7 +1236,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
         base_line = LineString([p1, p2])
         if base_line.length < 0.1: continue
         
-        is_exterior = (len(sharing_rooms) == 1)
+        is_exterior = _is_wall_exterior(base_line, sharing_rooms, exterior_boundary)
         wall_thick = EXTERIOR_WALL_THICKNESS if is_exterior else WALL_THICKNESS
         z_bottom = FLOOR_THICKNESS
         z_top = FLOOR_THICKNESS + WALL_HEIGHT

@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from shapely.geometry import box, Polygon, Point, LineString
+from shapely.ops import unary_union
 import sys
 import os
 
@@ -115,3 +116,44 @@ def test_archetype_3d_generation_has_zero_diagonal_walls():
                         diagonals.append((pts_base[0], pts_base[1]))
                         
         assert len(diagonals) == 0, f"Found {len(diagonals)} diagonal walls in 2BHK archetype (seed={seed})!"
+
+
+def test_no_windows_on_interior_shared_walls():
+    """
+    Verifies that exterior windows are strictly positioned on true external envelope walls
+    and NEVER appear on interior partition walls facing another room.
+    """
+    rooms = {
+        'living': box(0.0, 0.0, 7.0, 4.0),
+        'kitchen': box(7.0, 0.0, 11.0, 4.0),
+        'bedroom_1': box(0.0, 4.0, 4.0, 8.0),
+        'bedroom_2': box(4.0, 4.0, 8.0, 8.0),
+        'bathroom': box(8.0, 4.0, 11.0, 7.0),
+    }
+    layout = {'rooms': rooms}
+    mesh = build_house_from_layout(layout, visualize=False)
+    assert mesh is not None
+    
+    windows = layout.get("windows", [])
+    assert len(windows) > 0, "Exterior windows should be generated on exterior walls"
+    
+    envelope = unary_union(list(rooms.values()))
+    ext_boundary = envelope.boundary
+    
+    for w in windows:
+        seg = w["wall_segment"]
+        mid = seg.interpolate(0.5, normalized=True)
+        dist_to_exterior = ext_boundary.distance(mid)
+        assert dist_to_exterior < 0.05, (
+            f"Window in room '{w['room']}' is placed on an interior wall! "
+            f"Distance to exterior boundary: {dist_to_exterior:.2f}m. Segment: {list(seg.coords)}"
+        )
+        
+        # Verify it doesn't touch the interior of another room
+        for other_name, other_poly in rooms.items():
+            if other_name == w["room"]:
+                continue
+            assert not other_poly.buffer(-0.05).contains(mid), (
+                f"Window in room '{w['room']}' penetrates into room '{other_name}'!"
+            )
+
