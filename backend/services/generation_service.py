@@ -117,20 +117,22 @@ class GenerationService:
             if merged_pairs:
                 logger.info(f"Effective soft adjacency pairs: {merged_pairs}")
 
-            # 2. Layout Synthesis & CANDIDATE GENERATION (Best-of-N)
+            # 2. Layout Synthesis & CANDIDATE GENERATION (Best-of-N with Hard Architectural Gate)
             import uuid
             generation_id = str(uuid.uuid4()) # Unique ID for this generation request
-            candidates = []
             
             # Ensure directory exists for models
             models_dir = os.path.join(root_dir, "backend", "static", "models")
             os.makedirs(models_dir, exist_ok=True)
 
-            # Generate 3 candidates
-            for i in range(3):
+            sampled_candidates = []
+            MAX_ATTEMPTS = 12
+            TARGET_VALID_COUNT = 4
+
+            for attempt in range(MAX_ATTEMPTS):
                 seed = random.randint(0, 1000000)
                 try:
-                    # A. Synthesize
+                    # A. Synthesize Layout
                     layout_candidate = await loop.run_in_executor(
                         None, 
                         synthesize_layout_from_spec, 
@@ -139,58 +141,39 @@ class GenerationService:
                     )
 
                     if not layout_candidate.get("rooms"):
-                        logger.warning(f"Candidate {i}: synthesizer returned empty layout, skipping")
                         continue
 
-                    # B. Score & Architectural Validation
-                    adj_satisfaction = layout_candidate.get("adjacency_satisfaction", 1.0)
-                    stats_candidate = ScoringEngine.evaluate(layout_candidate, adj_satisfaction)
-                    base_score = stats_candidate["average"]
-                    
+                    # B. Hard Architectural Validation (Tier 1 Gate)
                     arch_check = validate_layout(
                         layout_candidate,
                         envelope_poly=layout_candidate.get("envelope")
                     )
+                    
+                    t1_status = arch_check.get("tier1_hard_constraints", {}).get("status", "pass")
+                    violations = arch_check.get("violations", [])
+                    is_hard_valid = arch_check.get("valid", False) and (t1_status != "fail") and (len(violations) == 0)
+
+                    # B2. Scoring (Tier 2 Usability & Tier 3 Semantics)
+                    adj_satisfaction = layout_candidate.get("adjacency_satisfaction", 1.0)
+                    stats_candidate = ScoringEngine.evaluate(layout_candidate, adj_satisfaction)
+                    base_score = stats_candidate["average"]
                     feasibility = arch_check.get("feasibility_score", 100)
                     stats_candidate["feasibility"] = feasibility
                     score_candidate = round((base_score * 0.6) + (feasibility * 0.4), 1)
-                    
-                    # C. Generate 3D Model (Unique per candidate)
-                    model_id = f"{generation_id}_{i}"
-                    model_filename = f"model_{model_id}.ply"
-                    output_path = os.path.join(models_dir, model_filename)
-                    
-                    await loop.run_in_executor(
-                        None,
-                        build_house_from_layout,
-                        layout_candidate,
-                        False, # visualize=False
-                        output_path
-                    )
-                    
-                    model_url = f"/static/models/{model_filename}"
-                    
-                    # Add to list
-                    # Serialize the layout so it can be sent over JSON
-                    serialized_candidate_layout = self._serialize_layout(layout_candidate)
-                    
-                    # Color Palette (Matching resplan_to_3d.py)
+
+                    # Compute candidate spec (colors & areas)
                     ROOM_COLORS = [
                         "#A8DADC", "#F1FAEE", "#A8E6CF", "#FFD3B6", 
                         "#FFAAA5", "#DCEDC1", "#D4A5A5", "#9D8189"
                     ]
-                
-                    # Generate Spec for this candidate (Colors/Areas)
                     candidate_spec = {"rooms": []}
-                    # 1. Get room items exactly as resplan_to_3d does (filtering empty/invalid)
                     from shapely.geometry import Polygon, MultiPolygon
                     generated_rooms_items = []
                     if layout_candidate.get("rooms"):
                         for k, v in layout_candidate["rooms"].items():
-                             if v and not v.is_empty and isinstance(v, (Polygon, MultiPolygon)):
-                                 generated_rooms_items.append((k, v))
-                
-                    # 2. Iterate and assign colors by index
+                            if v and not v.is_empty and isinstance(v, (Polygon, MultiPolygon)):
+                                generated_rooms_items.append((k, v))
+
                     type_counter: Dict[str, int] = {}
                     for idx, (room_name, poly) in enumerate(generated_rooms_items):
                         r_type = room_name.split('_')[0]
@@ -200,24 +183,14 @@ class GenerationService:
                         matching_specs = [r for r in spec["rooms"] if r["type"] == r_type]
                         requested_sqft = matching_specs[type_idx]["requested_area_sqft"] if type_idx < len(matching_specs) else None
 
-                        # Build display name with instance number when there are
-                        # multiple rooms of the same type (Bedroom 1, Bedroom 2,
-                        # Bathroom 1, Bathroom 2, etc.).
                         total_of_type = len(matching_specs)
-                        instance_num  = type_counter[r_type]
-                        if total_of_type > 1:
-                            display_type = f"{r_type.capitalize()} {instance_num}"
-                        else:
-                            display_type = r_type.capitalize()
+                        instance_num = type_counter[r_type]
+                        display_type = f"{r_type.capitalize()} {instance_num}" if total_of_type > 1 else r_type.capitalize()
 
                         area_sqm = poly.area
                         area_sqft = int(area_sqm * 10.764)
+                        area_error_pct = round(abs(area_sqft - requested_sqft) / requested_sqft * 100) if requested_sqft and requested_sqft > 0 else None
 
-                        if requested_sqft and requested_sqft > 0:
-                            area_error_pct = round(abs(area_sqft - requested_sqft) / requested_sqft * 100)
-                        else:
-                            area_error_pct = None
-                        
                         candidate_spec["rooms"].append({
                             "id": room_name,
                             "type": display_type,
@@ -228,7 +201,6 @@ class GenerationService:
                             "color": ROOM_COLORS[idx % len(ROOM_COLORS)]
                         })
 
-                    # Gentle area-fidelity penalty (max -10)
                     error_values = [r["area_error_pct"] for r in candidate_spec["rooms"] if r.get("area_error_pct") is not None]
                     if error_values:
                         avg_error = sum(error_values) / len(error_values)
@@ -238,26 +210,72 @@ class GenerationService:
                     else:
                         stats_candidate["area_fidelity_avg_error_pct"] = 0
 
-                    candidates.append({
-                        "id": i,
-                        "layout": serialized_candidate_layout, 
-                        "spec": candidate_spec, # Store spec per candidate
+                    cand_entry = {
+                        "layout_candidate": layout_candidate,
+                        "spec": candidate_spec,
                         "stats": stats_candidate,
                         "score": score_candidate,
-                        "model_url": model_url,
                         "seed": seed,
-                        "adjacency_satisfaction": adj_satisfaction,
-                        "architectural_check": arch_check
-                    })
+                        "adj_satisfaction": adj_satisfaction,
+                        "arch_check": arch_check,
+                        "is_hard_valid": is_hard_valid
+                    }
+                    sampled_candidates.append(cand_entry)
 
-                except ValueError as ve:
-                    # Room count mismatch, no placeable rooms, or other spec validation error.
-                    # Skip this candidate and try the next seed — do NOT kill the whole job.
-                    logger.warning(f"Candidate {i} (seed={seed}) failed validation: {ve}")
-                    continue
+                    # Early stop if we have enough high quality valid candidates
+                    valid_so_far = sum(1 for c in sampled_candidates if c["is_hard_valid"])
+                    if valid_so_far >= TARGET_VALID_COUNT:
+                        break
+
                 except Exception as e:
-                    logger.error(f"Candidate {i} (seed={seed}) unexpected error: {e}")
+                    logger.warning(f"Synthesis attempt {attempt} failed: {e}")
                     continue
+
+            if not sampled_candidates:
+                raise ValueError("Failed to generate any valid candidates")
+
+            # Filter valid candidates, or fallback to least-violation ones if none perfectly valid
+            valid_candidates = [c for c in sampled_candidates if c["is_hard_valid"]]
+            if not valid_candidates:
+                logger.warning("No candidate passed 100% hard constraints, falling back to top scored")
+                valid_candidates = sorted(sampled_candidates, key=lambda x: x["score"], reverse=True)
+            else:
+                valid_candidates = sorted(valid_candidates, key=lambda x: x["score"], reverse=True)
+
+            # Select Top 3
+            selected_pool = valid_candidates[:3]
+
+            # Generate 3D Models and opening consistency ONLY for the final selected candidates
+            candidates = []
+            for i, cand in enumerate(selected_pool):
+                layout_cand = cand["layout_candidate"]
+                model_id = f"{generation_id}_{i}"
+                model_filename = f"model_{model_id}.ply"
+                output_path = os.path.join(models_dir, model_filename)
+
+                await loop.run_in_executor(
+                    None,
+                    build_house_from_layout,
+                    layout_cand,
+                    False,
+                    output_path
+                )
+
+                model_url = f"/static/models/{model_filename}"
+                serialized_candidate_layout = self._serialize_layout(layout_cand)
+
+                candidates.append({
+                    "id": i,
+                    "design_id": layout_cand.get("design_id", model_id),
+                    "layout": serialized_candidate_layout,
+                    "spec": cand["spec"],
+                    "stats": cand["stats"],
+                    "score": cand["score"],
+                    "model_url": model_url,
+                    "seed": cand["seed"],
+                    "adjacency_satisfaction": cand["adj_satisfaction"],
+                    "architectural_check": cand["arch_check"]
+                })
             
             if not candidates:
                 raise ValueError("Failed to generate any valid candidates")

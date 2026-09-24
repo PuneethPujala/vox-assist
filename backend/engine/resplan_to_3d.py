@@ -40,6 +40,14 @@ except ImportError:
             solve_dining_zone_group = None
             solve_global_furniture_layout = None
 
+try:
+    from opening_registry import build_opening_registry
+except ImportError:
+    try:
+        from engine.opening_registry import build_opening_registry
+    except ImportError:
+        from backend.engine.opening_registry import build_opening_registry
+
 # =========================
 # REALISTIC HOUSE CONFIG
 # =========================
@@ -1164,89 +1172,79 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
              for d in doors_geom:
                  if isinstance(d, Polygon): door_polygons.append(d)
 
-    # 2. Build Wall Topology & Precompute Windows & Keepouts
-    print(" Building wall topology and precomputing openings...")
     valid_rooms = {k: v for k, v in rooms.items() if v and not v.is_empty}
     building_envelope = unary_union(list(valid_rooms.values())) if valid_rooms else None
     exterior_boundary = building_envelope.boundary if building_envelope and not building_envelope.is_empty else None
 
+    # 2. Retrieve or Build Authoritative Opening Registry (Single Source of Truth)
+    print(" Retrieving authoritative opening registry...")
+    opening_reg_data = layout.get("opening_registry")
+    if not opening_reg_data:
+        reg = build_opening_registry(
+            rooms=rooms,
+            doors_geom=doors_geom,
+            openings_metadata=layout.get("openings", []),
+            entrance_geom=layout.get("entrance"),
+            envelope=building_envelope,
+            design_id=layout.get("design_id")
+        )
+        layout["opening_registry"] = reg.to_dict()
+        layout["windows"] = reg.windows
+        layout["openings"] = reg.all_openings_metadata
+        layout["design_id"] = reg.design_id
+        opening_reg_data = layout["opening_registry"]
+
     edge_to_rooms = _compute_wall_graph(rooms)
 
-    # Precompute exterior windows & opening exclusion polygons
+    # Ingest windows directly from authoritative registry
     room_windows = defaultdict(list)
     windows_by_edge = {}
     window_exclusion_polys = []
-    exterior_windows_meta = []
+    exterior_windows_meta = list(layout.get("windows") or opening_reg_data.get("windows", []))
 
-    for (p1, p2), sharing_rooms in edge_to_rooms.items():
-        base_line = LineString([p1, p2])
-        if base_line.length < 0.1: continue
-        is_exterior = _is_wall_exterior(base_line, sharing_rooms, exterior_boundary)
-        if not is_exterior: continue
+    for win in exterior_windows_meta:
+        r_name = win.get("room", "").lower()
+        room_windows[r_name].append(win)
+        ko = win.get("keepout")
+        if ko and not ko.is_empty:
+            window_exclusion_polys.append(ko)
+        
+        # Ensure p_start and p_end coordinates are available
+        seg = win.get("wall_segment")
+        if seg and not seg.is_empty:
+            coords = list(seg.coords)
+            win["p_start"] = coords[0]
+            win["p_end"] = coords[-1]
 
-        r_name = sharing_rooms[0].lower()
-        has_door = False
-        if door_polygons:
-            has_door = any(base_line.intersects(d.buffer(0.02)) for d in door_polygons)
-        if has_door:
-            continue
+        # Associate window with corresponding wall graph edge (p1, p2)
+        win_seg = win.get("wall_segment")
+        win_room = win.get("room", "").lower()
+        win_pos = win.get("position") or win.get("center")
+        pos_pt = Point(win_pos) if win_pos else (win_seg.centroid if win_seg else None)
 
-        is_habitable = any(t in r_name for t in ["living", "bedroom", "dining", "kitchen", "study", "family"])
-        is_bathroom = any(t in r_name for t in ["bath", "toilet", "powder"])
+        best_edge = None
+        best_overlap = -1.0
 
-        if is_habitable and base_line.length >= 1.6:
-            win_width = min(1.8, max(1.0, base_line.length * 0.55))
-        elif is_bathroom and base_line.length >= 1.0:
-            win_width = min(0.8, base_line.length * 0.45)
-        else:
-            continue
+        for (p1, p2), r_list in edge_to_rooms.items():
+            # Edge must be shared by this window's room
+            if win_room and not any(win_room in r.lower() for r in r_list):
+                continue
+            edge_line = LineString([p1, p2])
+            # Check proximity to edge
+            if pos_pt and edge_line.distance(pos_pt) < 0.25:
+                overlap = 0.0
+                if win_seg:
+                    inter = edge_line.intersection(win_seg.buffer(0.05))
+                    if not inter.is_empty:
+                        overlap = inter.length
+                else:
+                    overlap = 1.0
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_edge = (p1, p2)
 
-        L = base_line.length
-        start_dist = (L - win_width) / 2.0
-        end_dist = start_dist + win_width
-
-        p_start = base_line.interpolate(start_dist / L, normalized=True)
-        p_end = base_line.interpolate(end_dist / L, normalized=True)
-        seg_window = LineString([(p_start.x, p_start.y), (p_end.x, p_end.y)])
-
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        line_len = (dx**2 + dy**2)**0.5
-        if line_len < 0.01: continue
-        ux, uy = dx / line_len, dy / line_len
-        nx, ny = -uy, ux
-
-        r_poly = rooms.get(sharing_rooms[0])
-        if r_poly and not r_poly.is_empty:
-            rcx, rcy = r_poly.centroid.x, r_poly.centroid.y
-            wcx = (p_start.x + p_end.x) / 2.0
-            wcy = (p_start.y + p_end.y) / 2.0
-            if (nx * (rcx - wcx) + ny * (rcy - wcy)) < 0:
-                nx, ny = -nx, -ny
-
-            keepout_depth = 0.80
-            k_poly = Polygon([
-                (p_start.x, p_start.y),
-                (p_end.x, p_end.y),
-                (p_end.x + nx * keepout_depth, p_end.y + ny * keepout_depth),
-                (p_start.x + nx * keepout_depth, p_start.y + ny * keepout_depth)
-            ])
-            win_item = {
-                "room": sharing_rooms[0],
-                "base_line": base_line,
-                "wall_segment": seg_window,
-                "p_start": (p_start.x, p_start.y),
-                "p_end": (p_end.x, p_end.y),
-                "width": win_width,
-                "keepout": k_poly,
-                "center": (wcx, wcy),
-                "inward_normal": (nx, ny),
-                "is_bathroom": is_bathroom
-            }
-            room_windows[sharing_rooms[0].lower()].append(win_item)
-            windows_by_edge[(p1, p2)] = win_item
-            window_exclusion_polys.append(k_poly)
-            exterior_windows_meta.append(win_item)
+        if best_edge:
+            windows_by_edge[best_edge] = win
 
     layout["windows"] = exterior_windows_meta
 
@@ -1350,6 +1348,7 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
 
     print(" Generating walls and windows...")
     generated_door_panels = []
+    rendered_openings = []
     
     for (p1, p2), sharing_rooms in edge_to_rooms.items():
         base_line = LineString([p1, p2])
@@ -1379,6 +1378,23 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                 p_end = matched_win["p_end"]
                 seg_window = matched_win["wall_segment"]
                 is_bathroom = matched_win.get("is_bathroom", False)
+
+                # Ensure p_start is closer to p1 and p_end is closer to p2
+                pt1 = Point(p1)
+                if Point(p_start).distance(pt1) > Point(p_end).distance(pt1):
+                    p_start, p_end = p_end, p_start
+
+                rendered_openings.append({
+                    "opening_id": matched_win.get("opening_id", f"win_{p1}_{p2}"),
+                    "wall_id": matched_win.get("wall_id"),
+                    "type": "window",
+                    "room": matched_win.get("room"),
+                    "position": matched_win.get("position") or matched_win.get("center"),
+                    "width": matched_win.get("width"),
+                    "height": matched_win.get("height", 1.20),
+                    "sill_height": matched_win.get("sill_height", (BATH_WINDOW_SILL_HEIGHT if is_bathroom else WINDOW_SILL_HEIGHT)),
+                    "head_height": matched_win.get("head_height", WINDOW_HEAD_HEIGHT),
+                })
 
                 seg_before = LineString([p1, p_start])
                 seg_after = LineString([p_end, p2])
@@ -1453,6 +1469,16 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
                                     
                                     door_poly = Polygon([tuple(c1), tuple(c2), tuple(c3), tuple(c4)])
                                     is_cased = (ilen > 1.15)
+                                    op_type = "entrance" if is_exterior else ("cased_opening" if is_cased else "door")
+                                    rendered_openings.append({
+                                        "opening_id": f"{op_type}_{round(center[0], 2)}_{round(center[1], 2)}",
+                                        "type": op_type,
+                                        "position": (round(center[0], 3), round(center[1], 3)),
+                                        "width": round(ilen, 2),
+                                        "height": DOOR_HEIGHT,
+                                        "is_cased": is_cased,
+                                        "is_exterior": is_exterior
+                                    })
                                     generated_door_panels.append({
                                         "poly": door_poly,
                                         "is_exterior": is_exterior,
@@ -1598,5 +1624,6 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
     
     if output_file:
         o3d.io.write_triangle_mesh(output_file, mesh)
-        
+
+    layout["rendered_openings"] = rendered_openings
     return mesh

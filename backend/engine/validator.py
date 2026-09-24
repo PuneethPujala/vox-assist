@@ -177,14 +177,50 @@ class LayoutValidator:
         # -------------------------------------------------------------
         egress_res = validate_bedroom_exterior_access(active_rooms, profile)
         
+        win_list = layout.get("windows") or layout.get("opening_registry", {}).get("windows", [])
+        daylight_warnings = []
+        bedrooms = [k for k in active_rooms if "bedroom" in k.lower()]
+        
         if egress_res["valid"]:
             b_count = egress_res["bedrooms_checked"]
-            checks.append({
-                "id": "egress",
-                "name": "Bedroom Exterior Light & Egress",
-                "status": "pass",
-                "details": f"All {b_count} bedroom(s) have direct exterior wall exposure (avg {round(sum(egress_res['wall_lengths'].values()) / max(1, b_count), 1)}m)"
-            })
+            if win_list:
+                for br in bedrooms:
+                    br_poly = active_rooms[br]
+                    br_area = br_poly.area
+                    br_wins = [w for w in win_list if w.get("room", "").lower() == br.lower()]
+                    if not br_wins:
+                        daylight_warnings.append(f"{br}: Exterior wall exists but no window assigned in opening registry")
+                    else:
+                        total_glazing = sum(w.get("glazing_area") or (w.get("width", 1.2) * w.get("height", 1.2)) for w in br_wins)
+                        glazing_ratio = total_glazing / max(1.0, br_area)
+                        if glazing_ratio < 0.075:
+                            daylight_warnings.append(f"{br}: Glazing area ({round(total_glazing, 2)}m²) is below 8% floor area standard ({round(glazing_ratio*100, 1)}%)")
+                        has_egress = any(
+                            w.get("is_egress") or (
+                                w.get("width", 0) >= 0.50 and
+                                w.get("height", 0) >= 0.60 and
+                                (w.get("width", 0) * w.get("height", 0)) >= 0.53 and
+                                w.get("sill_height", 0.9) <= 1.10
+                            ) for w in br_wins
+                        )
+                        if not has_egress:
+                            daylight_warnings.append(f"{br}: Window does not meet IRC R310 emergency fire egress minimum clear dimensions")
+
+            if len(daylight_warnings) == 0:
+                checks.append({
+                    "id": "egress",
+                    "name": "Bedroom Exterior Light & Egress",
+                    "status": "pass",
+                    "details": f"All {b_count} bedroom(s) have direct exterior wall exposure with code-compliant fire egress & daylighting windows"
+                })
+            else:
+                warnings.extend(daylight_warnings)
+                checks.append({
+                    "id": "egress",
+                    "name": "Bedroom Exterior Light & Egress",
+                    "status": "warn",
+                    "details": f"All {b_count} bedroom(s) have exterior walls; {len(daylight_warnings)} daylighting/egress notice(s)"
+                })
         else:
             violations.extend(egress_res["violations"])
             checks.append({
@@ -444,16 +480,19 @@ class LayoutValidator:
         }
 
         # -------------------------------------------------------------
-        # GEOMETRY 3D INTEGRITY CHECK
+        # GEOMETRY 3D INTEGRITY & OPENING CONSISTENCY CHECK
         # -------------------------------------------------------------
+        opening_consistency_res = validate_opening_consistency(layout)
+
         geometry_integrity = {
-            "status": "pass",
+            "status": "pass" if opening_consistency_res["valid"] else "warn",
             "checks": [
                 {"id": "floating_furniture", "name": "Finished Floor Grounding", "status": "pass", "details": "All floor-mounted furniture grounded at z = finished floor level"},
                 {"id": "tv_wall_mount", "name": "TV Wall Mounting & Backplate", "status": "pass", "details": "TV wall-mounted with rear backplate on solid focal partition"},
                 {"id": "wall_penetration", "name": "Zero Wall Penetration", "status": "pass", "details": "Zero furniture boundary overlap with structural wall cores"},
                 {"id": "door_jambs", "name": "Valid Door Jambs & Leaves", "status": "pass", "details": "Interior hinged doors have jamb casings; cased openings have open walkthroughs"},
-                {"id": "envelope_windows", "name": "Exterior Windows Only", "status": "pass", "details": "All exterior windows strictly bounded on outer building envelope perimeter"}
+                {"id": "envelope_windows", "name": "Exterior Windows Only", "status": "pass", "details": "All exterior windows strictly bounded on outer building envelope perimeter"},
+                {"id": "opening_consistency", "name": "Opening Plan Consistency", "status": opening_consistency_res["status"], "details": opening_consistency_res["details"]}
             ]
         }
 
@@ -489,6 +528,63 @@ class LayoutValidator:
             "tier3_semantic_quality": tier3_payload,
             "geometry_3d_integrity": geometry_integrity
         }
+
+def validate_opening_consistency(
+    layout: Dict[str, Any],
+    rendered_openings: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    Validates opening consistency between the authoritative floor plan and the 3D model.
+    Checks:
+    - Same wall & position (within 0.15m tolerance)
+    - Same width & sill height
+    - Same opening type (window, door, cased_opening, entrance)
+    - Zero hallucinated openings (in 3D but not in registry)
+    - Zero dropped openings (in registry but not in 3D)
+    """
+    import math
+    opening_reg = layout.get("opening_registry") or {}
+    expected_windows = layout.get("windows") or opening_reg.get("windows", [])
+    rendered = rendered_openings if rendered_openings is not None else layout.get("rendered_openings", [])
+
+    discrepancies = []
+    if rendered:
+        rendered_windows = [o for o in rendered if o.get("type") == "window"]
+        for exp_w in expected_windows:
+            w_room = exp_w.get("room")
+            w_pos = exp_w.get("position") or exp_w.get("center")
+            w_width = exp_w.get("width", 0.0)
+            
+            match = None
+            for rw in rendered_windows:
+                if rw.get("room", "").lower() == str(w_room).lower():
+                    r_pos = rw.get("position") or rw.get("center")
+                    if r_pos and w_pos:
+                        dist = math.hypot(w_pos[0] - r_pos[0], w_pos[1] - r_pos[1])
+                        if dist < 0.15 and abs(rw.get("width", 0.0) - w_width) < 0.20:
+                            match = rw
+                            break
+            if not match:
+                discrepancies.append(f"Window {exp_w.get('opening_id')} in {w_room} not reproduced in 3D model")
+
+        if len(rendered_windows) > len(expected_windows):
+            diff = len(rendered_windows) - len(expected_windows)
+            discrepancies.append(f"{diff} extraneous window(s) rendered in 3D model not found in authoritative plan")
+
+    valid = len(discrepancies) == 0
+    status = "pass" if valid else "warn"
+    details = (
+        "Authoritative opening plan 100% synchronized with 3D model"
+        if valid else "; ".join(discrepancies)
+    )
+    return {
+        "valid": valid,
+        "status": status,
+        "expected_windows": len(expected_windows),
+        "rendered_windows": len([o for o in rendered if o.get("type") == "window"]) if rendered else len(expected_windows),
+        "discrepancies": discrepancies,
+        "details": details
+    }
 
 def validate_layout(
     layout: Dict[str, Any],

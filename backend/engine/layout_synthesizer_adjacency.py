@@ -21,6 +21,7 @@ try:
     from constraints.envelope import compute_building_envelope, is_within_envelope
     from constraints.room_dimensions import compute_bounded_room_dimensions
     from building_footprint import select_and_partition_archetype, can_partition_archetype
+    from opening_registry import build_opening_registry
 except ImportError:
     from engine.constraints.envelope import compute_building_envelope, is_within_envelope
     from engine.constraints.room_dimensions import compute_bounded_room_dimensions
@@ -29,6 +30,10 @@ except ImportError:
     except ImportError:
         select_and_partition_archetype = None
         can_partition_archetype = None
+    try:
+        from engine.opening_registry import build_opening_registry
+    except ImportError:
+        from backend.engine.opening_registry import build_opening_registry
 
 # =========================
 # CONSTANTS
@@ -1179,11 +1184,26 @@ def synthesize_layout_from_spec(spec, config=None):
     requested_pairs = cfg.get("adjacency_pairs", [])
     adjacency_satisfaction = (satisfied / len(requested_pairs)) if requested_pairs else 1.0
     
+    # Authoritative Opening Registry (Single Source of Truth)
+    import uuid
+    design_id = cfg.get("design_id") or str(uuid.uuid4())
+    opening_reg = build_opening_registry(
+        rooms=rooms,
+        doors_geom=doors,
+        openings_metadata=openings_metadata,
+        entrance_geom=entrance,
+        envelope=envelope_poly,
+        design_id=design_id
+    )
+
     return {
+        "design_id": design_id,
         "rooms": rooms,
         "corridors": corridors,
         "doors": doors,
-        "openings": openings_metadata,
+        "openings": opening_reg.all_openings_metadata,
+        "windows": opening_reg.windows,
+        "opening_registry": opening_reg.to_dict(),
         "opening_specs": opening_specs,
         "adjacency": filtered_adjacency,
         "entrance": entrance,
