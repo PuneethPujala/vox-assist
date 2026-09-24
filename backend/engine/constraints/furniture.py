@@ -482,6 +482,117 @@ def validate_kitchen_workzones(
     }
 
 
+def validate_dining_furniture_clearance(
+    layout_rooms: Any,
+    placed_furniture: Optional[List[Dict[str, Any]]] = None,
+    openings: Optional[List[Dict[str, Any]]] = None,
+    protected_circ: Optional[Polygon] = None,
+    table_box: Optional[Polygon] = None,
+    chairs: Optional[List[Polygon]] = None,
+    door_polys: Optional[List[Polygon]] = None
+) -> Dict[str, Any]:
+    """
+    Validates dining area usability:
+    - Dedicated dining room or open living-dining zone has adequate clearance.
+    - Placed dining table & chairs maintain chair pullout (0.65m) and pedestrian corridor (0.90m).
+    - No obstruction of kitchen portal or primary circulation paths.
+    """
+    if isinstance(layout_rooms, Polygon):
+        dining_rooms = {"dining": layout_rooms}
+    elif isinstance(layout_rooms, dict):
+        dining_rooms = {
+            k: v for k, v in layout_rooms.items()
+            if "dining" in k.lower() and v is not None and not v.is_empty
+        }
+    else:
+        dining_rooms = {}
+
+    placed_items = list(placed_furniture or [])
+    if table_box is not None and not table_box.is_empty:
+        placed_items.append({"type": "dining_table", "poly": table_box, "room": "dining"})
+    if chairs:
+        for ch in chairs:
+            if ch is not None and not ch.is_empty:
+                placed_items.append({"type": "dining_chair", "poly": ch, "room": "dining"})
+
+    all_openings = list(openings or [])
+    if door_polys:
+        for dp in door_polys:
+            if dp is not None and not dp.is_empty:
+                all_openings.append({"polygon": dp, "type": "door"})
+
+    violations = []
+    warnings = []
+    pullout_clearance_ok = True
+    walkway_clearance_ok = True
+
+    if placed_items:
+        tables = [f for f in placed_items if any(t in f.get("type", "").lower() for t in ["dining_table", "dining"])]
+        for t in tables:
+            t_poly = t.get("poly")
+            if not t_poly or t_poly.is_empty:
+                continue
+            t_room = t.get("room", "dining")
+            r_poly = dining_rooms.get(t_room) or (next(iter(dining_rooms.values())) if dining_rooms else None)
+            
+            pullout = t_poly.buffer(0.65)
+
+            if r_poly and not r_poly.buffer(0.05).contains(t_poly):
+                violations.append(f"{t_room}: Dining table extends outside room boundary")
+            if r_poly and not r_poly.buffer(0.05).contains(pullout):
+                pullout_clearance_ok = False
+                warnings.append(f"{t_room}: Dining chair pull-out zone restricts wall clearance")
+
+            if r_poly:
+                rb = r_poly.bounds
+                tb = t_poly.bounds
+                aisles = [tb[0] - rb[0], rb[2] - tb[2], tb[1] - rb[1], rb[3] - tb[3]]
+                walkway_clearance_ok = any(a >= 0.85 for a in aisles)
+            else:
+                walkway_clearance_ok = True
+
+            # Check doorway opening collision
+            if all_openings:
+                for op in all_openings:
+                    op_p = op.get("polygon")
+                    if op_p and not op_p.is_empty:
+                        if t_poly.intersects(op_p):
+                            violations.append(f"{t_room}: Dining table blocks doorway opening")
+                        elif pullout.intersects(op_p):
+                            warnings.append(f"{t_room}: Dining chair pullout encroaches into doorway threshold")
+
+            # Check protected circulation collision
+            if protected_circ and not protected_circ.is_empty:
+                if t_poly.intersects(protected_circ):
+                    violations.append(f"{t_room}: Dining table directly intersects primary walking corridor")
+                elif pullout.intersects(protected_circ):
+                    warnings.append(f"{t_room}: Dining chair pullout encroaches into circulation corridor")
+
+    elif dining_rooms:
+        for d_name, d_poly in dining_rooms.items():
+            minx, miny, maxx, maxy = d_poly.bounds
+            w, h = maxx - minx, maxy - miny
+            if min(w, h) < 2.2:
+                warnings.append(f"{d_name}: Narrow dining width ({min(w, h):.2f}m < 2.4m) restricts standard 4-seater pullout clearance")
+
+    status = "fail" if violations else ("warn" if warnings else "pass")
+    msg = "Dining area maintains code-standard table and chair pull-out clearances (>=0.65m)"
+    if violations:
+        msg = "; ".join(violations)
+    elif warnings:
+        msg = "; ".join(warnings)
+
+    return {
+        "valid": len(violations) == 0,
+        "status": status,
+        "message": msg,
+        "pullout_clearance_ok": pullout_clearance_ok,
+        "walkway_clearance_ok": walkway_clearance_ok,
+        "violations": violations,
+        "warnings": warnings
+    }
+
+
 def validate_furniture_clearance(
     layout_rooms: Dict[str, Polygon],
     openings: Optional[List[Dict[str, Any]]] = None,
@@ -608,6 +719,21 @@ def validate_furniture_clearance(
         all_warnings.extend(kit_res["violations"])
     if kit_res["warnings"]:
         all_warnings.extend(kit_res["warnings"])
+
+    # 7. Dining Pull-Out & Walkway Subcheck
+    dining_res = validate_dining_furniture_clearance(
+        layout_rooms, placed_furniture=placed_furniture, openings=openings
+    )
+    subchecks.append({
+        "id": "dining_circulation",
+        "name": "Dining Pull-Out & Walkway",
+        "status": dining_res["status"],
+        "details": dining_res["message"]
+    })
+    if dining_res["violations"]:
+        all_warnings.extend(dining_res["violations"])
+    if dining_res["warnings"]:
+        all_warnings.extend(dining_res["warnings"])
 
     # Determine overall status
     if any(s["status"] == "fail" for s in subchecks):

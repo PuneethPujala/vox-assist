@@ -86,3 +86,40 @@ RANGE_HOOD_HEIGHT = 1.70        # Range hood bottom clearance
 UPPER_CABINET_DEPTH = 0.35      # Wall-mounted upper cabinets
 UPPER_CABINET_BOTTOM = 1.50     # Clearance above floor for upper cabinets
 UPPER_CABINET_TOP = 2.15        # Top of upper cabinets aligned with door lintel
+
+# ==============================================================================
+# BEDROOM FURNITURE & CLEARANCES
+# ==============================================================================
+DOUBLE_BED_WIDTH = 1.60         # Standard Queen/Double bed width
+DOUBLE_BED_LENGTH = 2.00        # Standard Queen/Double bed length
+SINGLE_BED_WIDTH = 1.00         # Single/Twin bed width
+SINGLE_BED_LENGTH = 2.00        # Single/Twin bed length
+BED_HEADBOARD_HEIGHT = 1.05     # Headboard height
+BED_MATTRESS_HEIGHT = 0.50      # Finished mattress top height
+NIGHTSTAND_WIDTH = 0.45         # Bedside table width
+NIGHTSTAND_DEPTH = 0.40         # Bedside table depth
+NIGHTSTAND_HEIGHT = 0.45        # Bedside table height
+BED_SIDE_CLEARANCE = 0.70       # Walking clearance along bed sides
+BED_FOOT_CLEARANCE = 0.80       # Walking clearance at foot of bed
+MASTER_WARDROBE_WIDTH = 1.80    # Master bedroom 3-door wardrobe width
+SECONDARY_WARDROBE_WIDTH = 1.20 # Secondary/Kids bedroom 2-door wardrobe width
+WARDROBE_DEPTH = 0.60           # Standard wardrobe depth
+WARDROBE_HEIGHT = 2.10          # Tall storage unit height aligned with door lintel
+WARDROBE_DOOR_CLEARANCE = 0.60  # Clear space required in front of wardrobe doors
+
+# ==============================================================================
+# DINING ZONE & CHAIR CLEARANCES
+# ==============================================================================
+DINING_TABLE_4S_WIDTH = 1.20    # 4-seater dining table length
+DINING_TABLE_4S_DEPTH = 0.80    # 4-seater dining table width
+DINING_TABLE_6S_WIDTH = 1.60    # 6-seater dining table length
+DINING_TABLE_6S_DEPTH = 0.90    # 6-seater dining table width
+DINING_TABLE_HEIGHT = 0.76      # Finished dining table top height
+DINING_CHAIR_WIDTH = 0.45       # Dining chair seat width
+DINING_CHAIR_DEPTH = 0.45       # Dining chair seat depth
+DINING_CHAIR_HEIGHT = 0.82      # Dining chair backrest height
+DINING_CHAIR_PULLOUT = 0.65     # Clearance needed to pull chair back from table
+DINING_WALKWAY_CLEARANCE = 0.90 # Pedestrian corridor behind pulled-out dining chairs
+BREAKFAST_COUNTER_WIDTH = 1.20  # Compact breakfast counter width for <65m2
+BREAKFAST_COUNTER_DEPTH = 0.50  # Compact breakfast counter depth
+

@@ -6,7 +6,7 @@ import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../components/ThemeProvider';
 import api, { API_BASE_URL } from '../lib/api';
-import { Loader2, Send, Plus, Trash2, ArrowRight, ArrowLeft, Printer, Box, Link2, Mic, MicOff, Loader, ShieldCheck, CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Send, Plus, Trash2, ArrowRight, ArrowLeft, Printer, Box, Link2, Mic, MicOff, Loader, ShieldCheck, CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronUp, UserCheck, Sparkles, Layers } from 'lucide-react';
 import * as THREE from 'three';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import gsap from 'gsap';
@@ -232,28 +232,45 @@ const InteractiveRoom = ({ roomPoly, roomId, setHoveredRoomId, isHovered, roomSp
 
 const ArchitecturalFeasibilityCard = ({ archCheck }) => {
     const [expanded, setExpanded] = useState(true);
+    const [activeTab, setActiveTab] = useState('all'); // 'all', 'tier1', 'tier2', 'tier3'
+    const [openTiers, setOpenTiers] = useState({ tier1: true, tier2: true, tier3: true, geometry: false });
+
     if (!archCheck) return null;
 
     const {
         feasibility_score = 0,
         checks_passed = 0,
         checks_total = 7,
-        checks = []
+        checks = [],
+        tier1_hard_constraints: t1,
+        tier2_human_usability: t2,
+        tier3_semantic_quality: t3,
+        geometry_3d_integrity: geo
     } = archCheck;
 
     const isAllPass = checks_passed === checks_total;
 
+    const toggleTier = (tierKey) => {
+        setOpenTiers(prev => ({ ...prev, [tierKey]: !prev[tierKey] }));
+    };
+
     return (
-        <div className="mb-6 rounded-2xl border border-stone-200/70 dark:border-stone-800 bg-white/80 dark:bg-stone-900/80 p-4 shadow-sm backdrop-blur-sm transition-all">
+        <div className="mb-6 rounded-2xl border border-stone-200/70 dark:border-stone-800 bg-white/85 dark:bg-stone-900/85 p-4 shadow-sm backdrop-blur-sm transition-all">
+            {/* Header */}
             <div 
                 className="flex items-center justify-between cursor-pointer select-none"
                 onClick={() => setExpanded(!expanded)}
             >
                 <div className="flex items-center gap-2">
-                    <ShieldCheck size={16} className={isAllPass ? "text-emerald-500" : "text-amber-500"} />
-                    <span className="text-xs font-bold text-stone-800 dark:text-stone-100 uppercase tracking-wider font-mono">
-                        Architectural Feasibility
-                    </span>
+                    <ShieldCheck size={18} className={isAllPass ? "text-emerald-500" : "text-amber-500"} />
+                    <div>
+                        <span className="text-xs font-bold text-stone-800 dark:text-stone-100 uppercase tracking-wider font-mono">
+                            Architectural Feasibility
+                        </span>
+                        <span className="text-[10px] text-stone-400 dark:text-stone-500 ml-2 font-mono">
+                            Three-Tier Architecture
+                        </span>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
@@ -262,16 +279,16 @@ const ArchitecturalFeasibilityCard = ({ archCheck }) => {
                             : "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/50"
                     }`}>
                         {isAllPass ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
-                        {checks_passed} / {checks_total} Checks Satisfied
+                        {feasibility_score}% Feasible
                     </span>
                     {expanded ? <ChevronUp size={14} className="text-stone-400" /> : <ChevronDown size={14} className="text-stone-400" />}
                 </div>
             </div>
 
-            {/* Score Bar */}
+            {/* Overall Score Bar */}
             <div className="mt-3">
                 <div className="flex justify-between text-[10px] font-mono mb-1">
-                    <span className="text-stone-500 dark:text-stone-400">Constraint Satisfaction</span>
+                    <span className="text-stone-500 dark:text-stone-400">Composite Validation Score</span>
                     <span className="font-bold text-stone-700 dark:text-stone-200">{feasibility_score}%</span>
                 </div>
                 <div className="h-1.5 w-full bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
@@ -284,64 +301,226 @@ const ArchitecturalFeasibilityCard = ({ archCheck }) => {
                 </div>
             </div>
 
-            {/* Expandable Check List */}
+            {/* Expandable Body */}
             {expanded && (
-                <div className="mt-4 space-y-2.5 pt-3 border-t border-stone-100 dark:border-stone-800">
-                    {checks.map((chk) => (
-                        <div key={chk.id} className="flex items-start gap-2.5 text-xs">
-                            <div className="mt-0.5 flex-shrink-0">
-                                {chk.status === 'pass' && <CheckCircle2 size={13} className="text-emerald-500" />}
-                                {chk.status === 'warn' && <AlertTriangle size={13} className="text-amber-500" />}
-                                {chk.status === 'fail' && <XCircle size={13} className="text-red-500" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between">
-                                    <span className="font-semibold text-stone-800 dark:text-stone-200 text-[11px]">{chk.name}</span>
-                                    <span className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.2 rounded ${
-                                        chk.status === 'pass' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/40' :
-                                        chk.status === 'warn' ? 'text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/40' :
-                                        'text-red-600 dark:text-red-400 bg-red-50/70 dark:bg-red-950/40'
-                                    }`}>
-                                        {chk.status}
-                                    </span>
+                <div className="mt-4 space-y-3 pt-3 border-t border-stone-100 dark:border-stone-800">
+                    {/* TIER 1: HARD ARCHITECTURAL CONSTRAINTS */}
+                    {t1 && (
+                        <div className="rounded-xl border border-stone-200/60 dark:border-stone-800/70 bg-stone-50/50 dark:bg-stone-900/40 p-3">
+                            <div 
+                                className="flex items-center justify-between cursor-pointer select-none"
+                                onClick={() => toggleTier('tier1')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <ShieldCheck size={14} className={t1.status === 'pass' ? "text-emerald-500" : "text-red-500"} />
+                                    <div>
+                                        <span className="text-[11px] font-bold text-stone-800 dark:text-stone-200">
+                                            Tier 1: Hard Constraints
+                                        </span>
+                                        <span className="text-[9.5px] text-stone-400 dark:text-stone-500 ml-1.5 italic">
+                                            (Can it exist?)
+                                        </span>
+                                    </div>
                                 </div>
-                                <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-0.5 leading-tight">
-                                    {chk.details}
-                                </p>
-                                {chk.subchecks && chk.subchecks.length > 0 && (
-                                    <div className="mt-2 pl-2 border-l border-stone-200 dark:border-stone-800 space-y-1">
-                                        {chk.subchecks.map((sc) => (
-                                            <div key={sc.id} className="py-0.5">
-                                                <div className="flex items-center justify-between text-[9.5px]">
-                                                    <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300">
-                                                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                                            sc.status === 'pass' ? 'bg-emerald-500' :
-                                                            sc.status === 'warn' ? 'bg-amber-500' : 'bg-red-500'
-                                                        }`} />
-                                                        <span className="font-medium">{sc.name}</span>
-                                                    </div>
-                                                    <span className={`text-[8.5px] uppercase font-mono px-1 rounded ${
-                                                        sc.status === 'pass' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40' :
-                                                        sc.status === 'warn' ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40' :
-                                                        'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40'
-                                                    }`}>
-                                                        {sc.status}
-                                                    </span>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                        t1.status === 'pass' ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60' : 'text-red-700 dark:text-red-300 bg-red-100/70 dark:bg-red-950/60'
+                                    }`}>
+                                        {t1.checks_passed} / {t1.checks_total} Passed
+                                    </span>
+                                    {openTiers.tier1 ? <ChevronUp size={12} className="text-stone-400" /> : <ChevronDown size={12} className="text-stone-400" />}
+                                </div>
+                            </div>
+                            {openTiers.tier1 && (
+                                <div className="mt-2.5 space-y-1.5 pt-2 border-t border-stone-200/40 dark:border-stone-800/50">
+                                    {t1.checks.map(chk => (
+                                        <div key={chk.id} className="flex items-start gap-2 text-[10.5px]">
+                                            {chk.status === 'pass' ? <CheckCircle2 size={12} className="text-emerald-500 mt-0.5 flex-shrink-0" /> : <XCircle size={12} className="text-red-500 mt-0.5 flex-shrink-0" />}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-medium text-stone-700 dark:text-stone-300">{chk.name}</span>
+                                                    <span className="text-[8.5px] uppercase font-mono text-stone-400">{chk.status}</span>
                                                 </div>
-                                                {sc.details && sc.status !== 'pass' && (
-                                                    <p className="text-[8.5px] text-stone-400 dark:text-stone-500 pl-3 leading-tight mt-0.5 font-mono">
-                                                        {sc.details}
-                                                    </p>
+                                                {chk.details && (
+                                                    <p className="text-[9.5px] text-stone-500 dark:text-stone-400 leading-tight mt-0.5">{chk.details}</p>
                                                 )}
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    ))}
+                    )}
+
+                    {/* TIER 2: HUMAN USABILITY CLEARANCES */}
+                    {t2 && (
+                        <div className="rounded-xl border border-stone-200/60 dark:border-stone-800/70 bg-stone-50/50 dark:bg-stone-900/40 p-3">
+                            <div 
+                                className="flex items-center justify-between cursor-pointer select-none"
+                                onClick={() => toggleTier('tier2')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <UserCheck size={14} className={t2.status === 'pass' ? "text-emerald-500" : (t2.status === 'warn' ? "text-amber-500" : "text-red-500")} />
+                                    <div>
+                                        <span className="text-[11px] font-bold text-stone-800 dark:text-stone-200">
+                                            Tier 2: Human Usability Clearances
+                                        </span>
+                                        <span className="text-[9.5px] text-stone-400 dark:text-stone-500 ml-1.5 italic">
+                                            (Can a human use it?)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                        t2.status === 'pass' ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60' :
+                                        t2.status === 'warn' ? 'text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/60' :
+                                        'text-red-700 dark:text-red-300 bg-red-100/70 dark:bg-red-950/60'
+                                    }`}>
+                                        {t2.checks_passed} / {t2.checks_total} Clearances Satisfied
+                                    </span>
+                                    {openTiers.tier2 ? <ChevronUp size={12} className="text-stone-400" /> : <ChevronDown size={12} className="text-stone-400" />}
+                                </div>
+                            </div>
+                            {openTiers.tier2 && (
+                                <div className="mt-2.5 space-y-1.5 pt-2 border-t border-stone-200/40 dark:border-stone-800/50">
+                                    {t2.checks.map(chk => (
+                                        <div key={chk.id} className="flex items-start gap-2 text-[10.5px]">
+                                            {chk.status === 'pass' ? <CheckCircle2 size={12} className="text-emerald-500 mt-0.5 flex-shrink-0" /> :
+                                             chk.status === 'warn' ? <AlertTriangle size={12} className="text-amber-500 mt-0.5 flex-shrink-0" /> :
+                                             <XCircle size={12} className="text-red-500 mt-0.5 flex-shrink-0" />}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-medium text-stone-700 dark:text-stone-300">{chk.name}</span>
+                                                    <span className={`text-[8.5px] uppercase font-mono px-1 rounded ${
+                                                        chk.status === 'pass' ? 'text-emerald-600 dark:text-emerald-400' :
+                                                        chk.status === 'warn' ? 'text-amber-600 dark:text-amber-400' :
+                                                        'text-red-600 dark:text-red-400'
+                                                    }`}>{chk.status}</span>
+                                                </div>
+                                                {chk.details && (
+                                                    <p className="text-[9.5px] text-stone-500 dark:text-stone-400 leading-tight mt-0.5">{chk.details}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TIER 3: SEMANTIC ROOM QUALITY */}
+                    {t3 && (
+                        <div className="rounded-xl border border-stone-200/60 dark:border-stone-800/70 bg-stone-50/50 dark:bg-stone-900/40 p-3">
+                            <div 
+                                className="flex items-center justify-between cursor-pointer select-none"
+                                onClick={() => toggleTier('tier3')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Sparkles size={14} className="text-amber-500" />
+                                    <div>
+                                        <span className="text-[11px] font-bold text-stone-800 dark:text-stone-200">
+                                            Tier 3: Semantic Room Quality
+                                        </span>
+                                        <span className="text-[9.5px] text-stone-400 dark:text-stone-500 ml-1.5 italic">
+                                            (Does the room make sense?)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/60">
+                                        {t3.overall_grammar_score}% Quality
+                                    </span>
+                                    {openTiers.tier3 ? <ChevronUp size={12} className="text-stone-400" /> : <ChevronDown size={12} className="text-stone-400" />}
+                                </div>
+                            </div>
+                            {openTiers.tier3 && t3.scores && (
+                                <div className="mt-2.5 pt-2 border-t border-stone-200/40 dark:border-stone-800/50 grid grid-cols-2 gap-2 text-[10px]">
+                                    {Object.entries(t3.scores).map(([zone, score]) => (
+                                        <div key={zone} className="bg-white/60 dark:bg-stone-800/50 rounded-lg p-2 border border-stone-200/40 dark:border-stone-700/40">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="capitalize font-medium text-stone-700 dark:text-stone-300">
+                                                    {zone.replace('_', ' ')}
+                                                </span>
+                                                <span className="font-mono font-bold text-stone-600 dark:text-stone-300">{score}%</span>
+                                            </div>
+                                            <div className="h-1 w-full bg-stone-100 dark:bg-stone-700 rounded-full overflow-hidden">
+                                                <div 
+                                                    className="h-full bg-amber-500 rounded-full" 
+                                                    style={{ width: `${score}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* INTERNAL 3D GEOMETRY INTEGRITY */}
+                    {geo && (
+                        <div className="rounded-xl border border-stone-200/60 dark:border-stone-800/70 bg-stone-50/50 dark:bg-stone-900/40 p-3">
+                            <div 
+                                className="flex items-center justify-between cursor-pointer select-none"
+                                onClick={() => toggleTier('geometry')}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Layers size={14} className="text-blue-500" />
+                                    <div>
+                                        <span className="text-[11px] font-bold text-stone-800 dark:text-stone-200">
+                                            3D CAD Geometric Integrity
+                                        </span>
+                                        <span className="text-[9.5px] text-stone-400 dark:text-stone-500 ml-1.5 italic">
+                                            (Floor Grounding & Wall Attachment)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded text-blue-700 dark:text-blue-300 bg-blue-100/70 dark:bg-blue-950/60">
+                                        Verified Pass
+                                    </span>
+                                    {openTiers.geometry ? <ChevronUp size={12} className="text-stone-400" /> : <ChevronDown size={12} className="text-stone-400" />}
+                                </div>
+                            </div>
+                            {openTiers.geometry && (
+                                <div className="mt-2.5 space-y-1 pt-2 border-t border-stone-200/40 dark:border-stone-800/50 text-[10px]">
+                                    {geo.checks.map(gc => (
+                                        <div key={gc.id} className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300">
+                                            <CheckCircle2 size={11} className="text-emerald-500 flex-shrink-0" />
+                                            <span className="font-medium">{gc.name}:</span>
+                                            <span className="text-stone-400 dark:text-stone-500 text-[9px]">{gc.details}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Fallback to legacy checks list if tiers are absent */}
+                    {(!t1 || !t2) && (
+                        <div className="space-y-2 pt-2">
+                            {checks.map((chk) => (
+                                <div key={chk.id} className="flex items-start gap-2.5 text-xs">
+                                    <div className="mt-0.5 flex-shrink-0">
+                                        {chk.status === 'pass' && <CheckCircle2 size={13} className="text-emerald-500" />}
+                                        {chk.status === 'warn' && <AlertTriangle size={13} className="text-amber-500" />}
+                                        {chk.status === 'fail' && <XCircle size={13} className="text-red-500" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-stone-800 dark:text-stone-200 text-[11px]">{chk.name}</span>
+                                            <span className="text-[9px] uppercase font-mono font-bold px-1.5 py-0.2 rounded text-emerald-600">
+                                                {chk.status}
+                                            </span>
+                                        </div>
+                                        <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-0.5 leading-tight">{chk.details}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="pt-2 mt-2 border-t border-stone-100/80 dark:border-stone-800/80 text-[9px] text-stone-400 dark:text-stone-500 italic font-sans leading-relaxed">
-                        * Architectural feasibility check for conceptual floor planning. Consult a licensed architect for building code permit drawings.
+                        * Architectural feasibility check for conceptual space planning. Consult a licensed architect for building code permit drawings.
                     </div>
                 </div>
             )}

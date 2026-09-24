@@ -22,7 +22,16 @@ try:
         VANITY_FRONT_CLEARANCE, SHOWER_ENTRY_CLEARANCE, COUNTER_DEPTH, COUNTER_HEIGHT,
         REFRIGERATOR_WIDTH, REFRIGERATOR_DEPTH, REFRIGERATOR_HEIGHT,
         SINK_WIDTH, COOKTOP_WIDTH, RANGE_HOOD_HEIGHT, UPPER_CABINET_DEPTH,
-        UPPER_CABINET_BOTTOM, UPPER_CABINET_TOP
+        UPPER_CABINET_BOTTOM, UPPER_CABINET_TOP,
+        DOUBLE_BED_WIDTH, DOUBLE_BED_LENGTH, SINGLE_BED_WIDTH, SINGLE_BED_LENGTH,
+        BED_HEADBOARD_HEIGHT, BED_MATTRESS_HEIGHT, NIGHTSTAND_WIDTH, NIGHTSTAND_DEPTH,
+        NIGHTSTAND_HEIGHT, BED_SIDE_CLEARANCE, BED_FOOT_CLEARANCE,
+        MASTER_WARDROBE_WIDTH, SECONDARY_WARDROBE_WIDTH, WARDROBE_DEPTH, WARDROBE_HEIGHT,
+        WARDROBE_DOOR_CLEARANCE, DINING_TABLE_4S_WIDTH, DINING_TABLE_4S_DEPTH,
+        DINING_TABLE_6S_WIDTH, DINING_TABLE_6S_DEPTH, DINING_TABLE_HEIGHT,
+        DINING_CHAIR_WIDTH, DINING_CHAIR_DEPTH, DINING_CHAIR_HEIGHT, DINING_CHAIR_PULLOUT,
+        DINING_WALKWAY_CLEARANCE, BREAKFAST_COUNTER_WIDTH, BREAKFAST_COUNTER_DEPTH,
+        CORRIDOR_WIDTH, WINDOW_KEEP_OUT, PERIMETER_WALKWAY
     )
 except ImportError:
     try:
@@ -36,7 +45,16 @@ except ImportError:
             VANITY_FRONT_CLEARANCE, SHOWER_ENTRY_CLEARANCE, COUNTER_DEPTH, COUNTER_HEIGHT,
             REFRIGERATOR_WIDTH, REFRIGERATOR_DEPTH, REFRIGERATOR_HEIGHT,
             SINK_WIDTH, COOKTOP_WIDTH, RANGE_HOOD_HEIGHT, UPPER_CABINET_DEPTH,
-            UPPER_CABINET_BOTTOM, UPPER_CABINET_TOP
+            UPPER_CABINET_BOTTOM, UPPER_CABINET_TOP,
+            DOUBLE_BED_WIDTH, DOUBLE_BED_LENGTH, SINGLE_BED_WIDTH, SINGLE_BED_LENGTH,
+            BED_HEADBOARD_HEIGHT, BED_MATTRESS_HEIGHT, NIGHTSTAND_WIDTH, NIGHTSTAND_DEPTH,
+            NIGHTSTAND_HEIGHT, BED_SIDE_CLEARANCE, BED_FOOT_CLEARANCE,
+            MASTER_WARDROBE_WIDTH, SECONDARY_WARDROBE_WIDTH, WARDROBE_DEPTH, WARDROBE_HEIGHT,
+            WARDROBE_DOOR_CLEARANCE, DINING_TABLE_4S_WIDTH, DINING_TABLE_4S_DEPTH,
+            DINING_TABLE_6S_WIDTH, DINING_TABLE_6S_DEPTH, DINING_TABLE_HEIGHT,
+            DINING_CHAIR_WIDTH, DINING_CHAIR_DEPTH, DINING_CHAIR_HEIGHT, DINING_CHAIR_PULLOUT,
+            DINING_WALKWAY_CLEARANCE, BREAKFAST_COUNTER_WIDTH, BREAKFAST_COUNTER_DEPTH,
+            CORRIDOR_WIDTH, WINDOW_KEEP_OUT, PERIMETER_WALKWAY
         )
     except ImportError:
         from backend.engine.constraints.furniture_constants import (
@@ -49,7 +67,16 @@ except ImportError:
             VANITY_FRONT_CLEARANCE, SHOWER_ENTRY_CLEARANCE, COUNTER_DEPTH, COUNTER_HEIGHT,
             REFRIGERATOR_WIDTH, REFRIGERATOR_DEPTH, REFRIGERATOR_HEIGHT,
             SINK_WIDTH, COOKTOP_WIDTH, RANGE_HOOD_HEIGHT, UPPER_CABINET_DEPTH,
-            UPPER_CABINET_BOTTOM, UPPER_CABINET_TOP
+            UPPER_CABINET_BOTTOM, UPPER_CABINET_TOP,
+            DOUBLE_BED_WIDTH, DOUBLE_BED_LENGTH, SINGLE_BED_WIDTH, SINGLE_BED_LENGTH,
+            BED_HEADBOARD_HEIGHT, BED_MATTRESS_HEIGHT, NIGHTSTAND_WIDTH, NIGHTSTAND_DEPTH,
+            NIGHTSTAND_HEIGHT, BED_SIDE_CLEARANCE, BED_FOOT_CLEARANCE,
+            MASTER_WARDROBE_WIDTH, SECONDARY_WARDROBE_WIDTH, WARDROBE_DEPTH, WARDROBE_HEIGHT,
+            WARDROBE_DOOR_CLEARANCE, DINING_TABLE_4S_WIDTH, DINING_TABLE_4S_DEPTH,
+            DINING_TABLE_6S_WIDTH, DINING_TABLE_6S_DEPTH, DINING_TABLE_HEIGHT,
+            DINING_CHAIR_WIDTH, DINING_CHAIR_DEPTH, DINING_CHAIR_HEIGHT, DINING_CHAIR_PULLOUT,
+            DINING_WALKWAY_CLEARANCE, BREAKFAST_COUNTER_WIDTH, BREAKFAST_COUNTER_DEPTH,
+            CORRIDOR_WIDTH, WINDOW_KEEP_OUT, PERIMETER_WALKWAY
         )
 
 
@@ -631,3 +658,593 @@ def solve_kitchen_workzones(
         "cooktop_pos": cooktop_pos,
         "counter_depth": counter_d
     }
+
+
+# ==============================================================================
+# 4. BEDROOM COHESIVE GROUP SOLVER
+# ==============================================================================
+
+def solve_bedroom_furniture_group(
+    room_poly: Polygon,
+    room_name: str = "bedroom",
+    door_polys: Optional[List[Polygon]] = None,
+    windows: Optional[List[Dict[str, Any]]] = None,
+    window_exclusion_polys: Optional[List[Polygon]] = None,
+    wall_graph: Optional[Dict[Tuple[Tuple[float, float], Tuple[float, float]], List[str]]] = None,
+    scale: float = 1.0,
+    room_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Solves cohesive bedroom layout:
+    1. Headboard on solid interior focal wall (strictly never on a window wall).
+    2. Symmetrical bedside nightstands flanking headboard.
+    3. Wardrobe sized to room type (1.80m Master, 1.20m Secondary) on alternate solid wall.
+    4. Wardrobe strictly avoids window daylighting keep-out zones and door swings.
+    5. Maintains walking perimeter clearance (>= 0.70m sides, >= 0.80m foot) and wardrobe door clearance (>= 0.60m).
+    """
+    door_polys = door_polys or []
+    windows = windows or []
+    window_exclusion_polys = window_exclusion_polys or []
+
+    minx, miny, maxx, maxy = room_poly.bounds
+    cx, cy = room_poly.centroid.x, room_poly.centroid.y
+    w, h = maxx - minx, maxy - miny
+    area = room_poly.area
+
+    # Master vs Secondary classification
+    type_or_name = f"{room_type or ''} {room_name}".lower()
+    is_master = any(k in type_or_name for k in ["master", "primary", "_1"]) or area >= 13.0
+    bed_type = "double" if (area >= 10.0 or is_master) else "single"
+    bed_w = (DOUBLE_BED_WIDTH if bed_type == "double" else SINGLE_BED_WIDTH) * scale
+    bed_l = (DOUBLE_BED_LENGTH if bed_type == "double" else SINGLE_BED_LENGTH) * scale
+    head_d = 0.10 * scale
+    head_h = BED_HEADBOARD_HEIGHT
+    mat_h = BED_MATTRESS_HEIGHT
+    ns_w = NIGHTSTAND_WIDTH * scale
+    ns_d = NIGHTSTAND_DEPTH * scale
+    target_wardrobe_w = (MASTER_WARDROBE_WIDTH if is_master else SECONDARY_WARDROBE_WIDTH) * scale
+    wardrobe_d = WARDROBE_DEPTH * scale
+
+    walls = {
+        "south": LineString([(minx, miny), (maxx, miny)]),
+        "north": LineString([(minx, maxy), (maxx, maxy)]),
+        "west":  LineString([(minx, miny), (minx, maxy)]),
+        "east":  LineString([(maxx, miny), (maxx, maxy)]),
+    }
+
+    # Aggregate window keep-outs and segments
+    win_keepouts = list(window_exclusion_polys)
+    for win in windows:
+        w_room = win.get("room")
+        if w_room and w_room != room_name:
+            continue
+        ko = win.get("keepout")
+        if ko and not ko.is_empty:
+            win_keepouts.append(ko)
+        seg = win.get("wall_segment")
+        if seg and not seg.is_empty:
+            win_keepouts.append(seg.buffer(0.35))
+    win_union = unary_union(win_keepouts) if win_keepouts else Polygon()
+
+    # Aggregate doors touching room
+    room_doors = [dp for dp in door_polys if dp.intersects(room_poly.buffer(0.25))]
+
+    # Classify walls
+    wall_info = {}
+    for w_side, w_line in walls.items():
+        # Check window intersection
+        has_win = False
+        if not win_union.is_empty and w_line.buffer(0.12).intersects(win_union):
+            has_win = True
+        for win in windows:
+            seg = win.get("wall_segment")
+            if seg and not seg.is_empty and seg.intersects(w_line.buffer(0.12)):
+                has_win = True
+                break
+
+        # Check door cuts
+        cuts = [dp for dp in room_doors if dp.intersects(w_line.buffer(0.35))]
+
+        # Check interior partition status via wall_graph
+        is_interior = False
+        if wall_graph:
+            for (p1, p2), sharing in wall_graph.items():
+                inter = LineString([p1, p2]).intersection(w_line.buffer(0.08))
+                if inter.length > 0.40 and len(sharing) > 1:
+                    is_interior = True
+                    break
+
+        wall_info[w_side] = {
+            "has_win": has_win,
+            "door_cuts": cuts,
+            "is_interior": is_interior,
+            "length": w_line.length
+        }
+
+    # Evaluate Headboard Candidates
+    candidates = []
+    for w_side, w_line in walls.items():
+        winfo = wall_info[w_side]
+        reasons = []
+
+        if winfo["has_win"]:
+            reasons.append(f"Wall {w_side} has exterior window openings (headboards must not block daylighting)")
+
+        # Center placement along wall
+        if w_side == "south":
+            bed_cx = cx
+            head_box = box(bed_cx - bed_w/2.0 - 0.05*scale, miny + 0.02, bed_cx + bed_w/2.0 + 0.05*scale, miny + head_d + 0.02)
+            mat_box = box(bed_cx - bed_w/2.0, miny + head_d + 0.02, bed_cx + bed_w/2.0, miny + bed_l)
+            bed_box = box(bed_cx - bed_w/2.0, miny + 0.02, bed_cx + bed_w/2.0, miny + bed_l)
+            foot_dist = maxy - (miny + bed_l)
+            side_dist = min(bed_cx - bed_w/2.0 - minx, maxx - (bed_cx + bed_w/2.0))
+            # Nightstands
+            ns_left = box(bed_cx - bed_w/2.0 - 0.05*scale - ns_w, miny + 0.02, bed_cx - bed_w/2.0 - 0.05*scale, miny + 0.02 + ns_d)
+            ns_right = box(bed_cx + bed_w/2.0 + 0.05*scale, miny + 0.02, bed_cx + bed_w/2.0 + 0.05*scale + ns_w, miny + 0.02 + ns_d)
+        elif w_side == "north":
+            bed_cx = cx
+            head_box = box(bed_cx - bed_w/2.0 - 0.05*scale, maxy - head_d - 0.02, bed_cx + bed_w/2.0 + 0.05*scale, maxy - 0.02)
+            mat_box = box(bed_cx - bed_w/2.0, maxy - bed_l, bed_cx + bed_w/2.0, maxy - head_d - 0.02)
+            bed_box = box(bed_cx - bed_w/2.0, maxy - bed_l, bed_cx + bed_w/2.0, maxy - 0.02)
+            foot_dist = (maxy - bed_l) - miny
+            side_dist = min(bed_cx - bed_w/2.0 - minx, maxx - (bed_cx + bed_w/2.0))
+            ns_left = box(bed_cx - bed_w/2.0 - 0.05*scale - ns_w, maxy - 0.02 - ns_d, bed_cx - bed_w/2.0 - 0.05*scale, maxy - 0.02)
+            ns_right = box(bed_cx + bed_w/2.0 + 0.05*scale, maxy - 0.02 - ns_d, bed_cx + bed_w/2.0 + 0.05*scale + ns_w, maxy - 0.02)
+        elif w_side == "west":
+            bed_cy = cy
+            head_box = box(minx + 0.02, bed_cy - bed_w/2.0 - 0.05*scale, minx + head_d + 0.02, bed_cy + bed_w/2.0 + 0.05*scale)
+            mat_box = box(minx + head_d + 0.02, bed_cy - bed_w/2.0, minx + bed_l, bed_cy + bed_w/2.0)
+            bed_box = box(minx + 0.02, bed_cy - bed_w/2.0, minx + bed_l, bed_cy + bed_w/2.0)
+            foot_dist = maxx - (minx + bed_l)
+            side_dist = min(bed_cy - bed_w/2.0 - miny, maxy - (bed_cy + bed_w/2.0))
+            ns_left = box(minx + 0.02, bed_cy - bed_w/2.0 - 0.05*scale - ns_w, minx + 0.02 + ns_d, bed_cy - bed_w/2.0 - 0.05*scale)
+            ns_right = box(minx + 0.02, bed_cy + bed_w/2.0 + 0.05*scale, minx + 0.02 + ns_d, bed_cy + bed_w/2.0 + 0.05*scale + ns_w)
+        else: # east
+            bed_cy = cy
+            head_box = box(maxx - head_d - 0.02, bed_cy - bed_w/2.0 - 0.05*scale, maxx - 0.02, bed_cy + bed_w/2.0 + 0.05*scale)
+            mat_box = box(maxx - bed_l, bed_cy - bed_w/2.0, maxx - head_d - 0.02, bed_cy + bed_w/2.0)
+            bed_box = box(maxx - bed_l, bed_cy - bed_w/2.0, maxx - 0.02, bed_cy + bed_w/2.0)
+            foot_dist = (maxx - bed_l) - minx
+            side_dist = min(bed_cy - bed_w/2.0 - miny, maxy - (bed_cy + bed_w/2.0))
+            ns_left = box(maxx - 0.02 - ns_d, bed_cy - bed_w/2.0 - 0.05*scale - ns_w, maxx - 0.02, bed_cy - bed_w/2.0 - 0.05*scale)
+            ns_right = box(maxx - 0.02 - ns_d, bed_cy + bed_w/2.0 + 0.05*scale, maxx - 0.02, bed_cy + bed_w/2.0 + 0.05*scale + ns_w)
+
+        # Check door collisions with bed
+        for dp in winfo["door_cuts"]:
+            if dp.intersects(bed_box):
+                reasons.append("Bed directly collides with doorway opening")
+            elif dp.distance(bed_box) < 0.30:
+                reasons.append("Bed restricts immediate doorway passage")
+
+        # Nightstands containment and validation
+        valid_nightstands = []
+        for ns in [ns_left, ns_right]:
+            if room_poly.buffer(0.05).contains(ns) and not any(dp.intersects(ns) for dp in room_doors):
+                if win_union.is_empty or not ns.intersects(win_union):
+                    valid_nightstands.append(ns)
+
+        if not room_poly.buffer(0.05).contains(bed_box):
+            reasons.append("Bed exceeds room boundary")
+
+        if foot_dist < 0.65:
+            reasons.append(f"Insufficient foot clearance ({foot_dist:.2f}m < 0.70m)")
+
+        # Scoring
+        score = 100.0
+        if winfo["has_win"]:
+            score -= 500.0  # strictly disqualify window walls
+        if winfo["is_interior"]:
+            score += 25.0
+        if len(winfo["door_cuts"]) == 0:
+            score += 20.0
+        else:
+            score -= len(winfo["door_cuts"]) * 20.0
+        score += len(valid_nightstands) * 10.0
+        if side_dist >= BED_SIDE_CLEARANCE:
+            score += 15.0
+        if foot_dist >= BED_FOOT_CLEARANCE:
+            score += 10.0
+        score -= len(reasons) * 40.0
+
+        candidates.append({
+            "wall": w_side,
+            "score": score,
+            "valid": len(reasons) == 0 and not winfo["has_win"],
+            "reasons": reasons,
+            "bed_box": bed_box,
+            "headboard_box": head_box,
+            "mattress_box": mat_box,
+            "nightstand_boxes": valid_nightstands,
+            "foot_dist": foot_dist,
+            "side_dist": side_dist
+        })
+
+    candidates.sort(key=lambda c: (c["valid"], c["score"]), reverse=True)
+    best_headboard = candidates[0] if candidates else None
+
+    # Step 2: Solve Wardrobe on Alternate Solid Wall
+    best_wardrobe = None
+    if best_headboard:
+        h_wall = best_headboard["wall"]
+        b_box = best_headboard["bed_box"]
+        candidate_wardrobe_walls = [s for s in ["south", "north", "west", "east"] if s != h_wall]
+
+        wardrobe_candidates = []
+        for w_side in candidate_wardrobe_walls:
+            winfo = wall_info[w_side]
+            if winfo["has_win"]:
+                continue  # Never on window wall
+
+            w_len_target = target_wardrobe_w
+            # Check length availability
+            wall_span = w if w_side in ["south", "north"] else h
+            cuts = winfo["door_cuts"]
+
+            # Try placement along w_side
+            # Try sizing: target, then compact 1.20, then 1.00
+            for w_curr_w in [w_len_target, SECONDARY_WARDROBE_WIDTH * scale, 1.00 * scale]:
+                if w_curr_w > wall_span - 0.40:
+                    continue
+
+                # Test 3 positions: near min corner, center, near max corner
+                if w_side in ["south", "north"]:
+                    py_w = miny + 0.02 if w_side == "south" else maxy - 0.02 - wardrobe_d
+                    pos_list = [minx + 0.10, cx - w_curr_w / 2.0, maxx - 0.10 - w_curr_w]
+                else:
+                    px_w = minx + 0.02 if w_side == "west" else maxx - 0.02 - wardrobe_d
+                    pos_list = [miny + 0.10, cy - w_curr_w / 2.0, maxy - 0.10 - w_curr_w]
+
+                for p_coord in pos_list:
+                    if w_side in ["south", "north"]:
+                        wb = box(p_coord, py_w, p_coord + w_curr_w, py_w + wardrobe_d)
+                        # Door clearance box (0.60m into room)
+                        if w_side == "south":
+                            w_door_box = box(p_coord, py_w + wardrobe_d, p_coord + w_curr_w, py_w + wardrobe_d + WARDROBE_DOOR_CLEARANCE)
+                        else:
+                            w_door_box = box(p_coord, py_w - WARDROBE_DOOR_CLEARANCE, p_coord + w_curr_w, py_w)
+                    else:
+                        wb = box(px_w, p_coord, px_w + wardrobe_d, p_coord + w_curr_w)
+                        if w_side == "west":
+                            w_door_box = box(px_w + wardrobe_d, p_coord, px_w + wardrobe_d + WARDROBE_DOOR_CLEARANCE, p_coord + w_curr_w)
+                        else:
+                            w_door_box = box(px_w - WARDROBE_DOOR_CLEARANCE, p_coord, px_w, p_coord + w_curr_w)
+
+                    # Collision checks
+                    overlaps_bed = wb.intersects(b_box.buffer(0.20))
+                    overlaps_ns = any(wb.intersects(ns.buffer(0.10)) for ns in best_headboard["nightstand_boxes"])
+                    overlaps_door = any(wb.intersects(dp.buffer(0.25)) for dp in room_doors)
+                    overlaps_win = (not win_union.is_empty) and wb.intersects(win_union)
+                    contained = room_poly.buffer(0.05).contains(wb)
+                    door_clearance_ok = not w_door_box.intersects(b_box)
+
+                    if not overlaps_bed and not overlaps_ns and not overlaps_door and not overlaps_win and contained:
+                        w_score = 100.0 + (w_curr_w * 10.0)
+                        if door_clearance_ok:
+                            w_score += 20.0
+                        if winfo["is_interior"]:
+                            w_score += 15.0
+                        wardrobe_candidates.append({
+                            "wall": w_side,
+                            "box": wb,
+                            "door_clearance_box": w_door_box,
+                            "width": w_curr_w,
+                            "score": w_score,
+                            "door_clearance_ok": door_clearance_ok
+                        })
+
+        if wardrobe_candidates:
+            wardrobe_candidates.sort(key=lambda c: (c["door_clearance_ok"], c["score"]), reverse=True)
+            best_wardrobe = wardrobe_candidates[0]
+
+    # Build response payload
+    overall_score = best_headboard["score"] if best_headboard else 0.0
+    if best_wardrobe:
+        overall_score = min(100.0, (overall_score + best_wardrobe["score"]) / 2.0)
+    else:
+        overall_score = max(0.0, overall_score - 20.0)
+
+    # Walking aisle polys around bed
+    aisle_polys = []
+    if best_headboard:
+        bb = best_headboard["bed_box"]
+        aisle_polys.append(bb.buffer(PERIMETER_WALKWAY))
+
+    return {
+        "wall": best_headboard["wall"] if best_headboard else None,
+        "headboard_wall": best_headboard["wall"] if best_headboard else None,
+        "wardrobe_wall": best_wardrobe["wall"] if best_wardrobe else None,
+        "score": round(max(0.0, min(100.0, overall_score)), 1),
+        "valid": best_headboard["valid"] if best_headboard else False,
+        "bed_box": best_headboard["bed_box"] if best_headboard else None,
+        "bed_type": bed_type,
+        "headboard_box": best_headboard["headboard_box"] if best_headboard else None,
+        "mattress_box": best_headboard["mattress_box"] if best_headboard else None,
+        "nightstand_boxes": best_headboard["nightstand_boxes"] if best_headboard else [],
+        "wardrobe_box": best_wardrobe["box"] if best_wardrobe else None,
+        "wardrobe_door_clearance_box": best_wardrobe["door_clearance_box"] if best_wardrobe else None,
+        "wardrobe_width": best_wardrobe["width"] if best_wardrobe else 0.0,
+        "walking_aisle_polys": aisle_polys,
+        "reasons": best_headboard.get("reasons", []) if best_headboard else ["Could not solve bedroom headboard"]
+    }
+
+
+# ==============================================================================
+# 5. DINING ZONE GROUP SOLVER
+# ==============================================================================
+
+def solve_dining_zone_group(
+    dining_poly: Polygon,
+    kitchen_poly: Optional[Polygon] = None,
+    door_polys: Optional[List[Polygon]] = None,
+    openings: Optional[List[Dict[str, Any]]] = None,
+    protected_circ: Optional[Polygon] = None,
+    foyer_keepout: Optional[Polygon] = None,
+    living_group: Optional[Dict[str, Any]] = None,
+    is_compact: bool = False,
+    scale: float = 1.0
+) -> Dict[str, Any]:
+    """
+    Solves dining furniture group:
+    1. Default 4-seater (1.20m x 0.80m) or 6-seater (1.60m x 0.90m if area >= 14m2).
+    2. Fallback to breakfast counter (1.20m x 0.50m) if compact < 65m2 and space restricts corridor.
+    3. Chair pull-out envelope (0.65m buffer around table).
+    4. Pedestrian walkway (>= 0.90m clear perimeter behind pulled chairs).
+    5. Adjacency to kitchen opening / pass-through.
+    6. Non-collision with living group, primary circulation spine, and foyer arrival.
+    """
+    door_polys = door_polys or []
+    openings = openings or []
+
+    minx, miny, maxx, maxy = dining_poly.bounds
+    cx, cy = dining_poly.centroid.x, dining_poly.centroid.y
+    w, h = maxx - minx, maxy - miny
+    area = dining_poly.area
+
+    # Determine table archetype
+    if area >= 14.0 and not is_compact:
+        t_w = DINING_TABLE_6S_WIDTH * scale
+        t_d = DINING_TABLE_6S_DEPTH * scale
+        chair_count = 6
+        archetype = "DINING_6S"
+    elif is_compact and (w < 2.5 or h < 2.5):
+        t_w = BREAKFAST_COUNTER_WIDTH * scale
+        t_d = BREAKFAST_COUNTER_DEPTH * scale
+        chair_count = 2
+        archetype = "BREAKFAST_COUNTER"
+    else:
+        t_w = DINING_TABLE_4S_WIDTH * scale
+        t_d = DINING_TABLE_4S_DEPTH * scale
+        chair_count = 4
+        archetype = "DINING_4S"
+
+    # Direction towards kitchen if known
+    target_cx, target_cy = cx, cy
+    if kitchen_poly and not kitchen_poly.is_empty:
+        kcx, kcy = kitchen_poly.centroid.x, kitchen_poly.centroid.y
+        # Shift towards kitchen boundary by ~25% of room dimension
+        target_cx = cx + 0.25 * (kcx - cx)
+        target_cy = cy + 0.25 * (kcy - cy)
+        # Clamp within room bounds with buffer
+        target_cx = max(minx + t_w/2.0 + 0.50, min(maxx - t_w/2.0 - 0.50, target_cx))
+        target_cy = max(miny + t_d/2.0 + 0.50, min(maxy - t_d/2.0 - 0.50, target_cy))
+
+    # Candidate table center positions
+    candidate_centers = [
+        (target_cx, target_cy),
+        (cx, cy),
+        (cx + 0.3 * (maxx - cx), cy),
+        (cx - 0.3 * (cx - minx), cy),
+        (cx, cy + 0.3 * (maxy - cy)),
+        (cx, cy - 0.3 * (cy - miny)),
+        (cx + 0.35 * (maxx - cx), cy + 0.35 * (maxy - cy)),
+        (cx - 0.35 * (cx - minx), cy + 0.35 * (maxy - cy)),
+        (cx + 0.35 * (maxx - cx), cy - 0.35 * (cy - miny)),
+        (cx - 0.35 * (cx - minx), cy - 0.35 * (cy - miny)),
+    ]
+
+    best_cand = None
+    candidates = []
+
+    for tcx, tcy in candidate_centers:
+        for orient in ["horizontal", "vertical"]:
+            cur_w = t_w if orient == "horizontal" else t_d
+            cur_d = t_d if orient == "horizontal" else t_w
+
+            t_box = box(tcx - cur_w/2.0, tcy - cur_d/2.0, tcx + cur_w/2.0, tcy + cur_d/2.0)
+            pullout_box = t_box.buffer(DINING_CHAIR_PULLOUT)
+            walkway_box = t_box.buffer(DINING_CHAIR_PULLOUT + DINING_WALKWAY_CLEARANCE)
+
+            reasons = []
+
+            # 1. Room containment
+            if not dining_poly.buffer(0.05).contains(t_box):
+                reasons.append("Dining table extends outside room boundary")
+
+            # 2. Door clearance
+            for dp in door_polys:
+                if dp.intersects(pullout_box):
+                    reasons.append("Chair pull-out encroaches into doorway clearance")
+
+            # 3. Foyer arrival keepout
+            if foyer_keepout and not foyer_keepout.is_empty and t_box.intersects(foyer_keepout):
+                reasons.append("Dining table encroaches into foyer arrival zone")
+
+            # 4. Protected circulation spine
+            if protected_circ and not protected_circ.is_empty and t_box.intersects(protected_circ):
+                reasons.append("Dining table obstructs primary circulation spine")
+
+            # 5. Living room group non-clash
+            if living_group:
+                for f_key in ["sofa_box", "coffee_table_box", "tv_box", "rug_box"]:
+                    fb = living_group.get(f_key)
+                    if fb and not fb.is_empty and pullout_box.intersects(fb):
+                        reasons.append(f"Dining chair pull-out clashes with living {f_key.replace('_box', '')}")
+
+            # Chairs generation
+            cw = DINING_CHAIR_WIDTH * scale
+            cd = DINING_CHAIR_DEPTH * scale
+            chairs = []
+            if orient == "horizontal":
+                # Top and bottom long sides
+                if chair_count == 4:
+                    offsets = [-cur_w * 0.25, cur_w * 0.25]
+                elif chair_count == 6:
+                    offsets = [-cur_w * 0.33, 0.0, cur_w * 0.33]
+                else: # 2 chairs
+                    offsets = [0.0]
+
+                for off in offsets:
+                    # Bottom side chair
+                    chairs.append(box(tcx + off - cw/2.0, tcy - cur_d/2.0 - cd, tcx + off + cw/2.0, tcy - cur_d/2.0))
+                    if chair_count > 2:
+                        # Top side chair
+                        chairs.append(box(tcx + off - cw/2.0, tcy + cur_d/2.0, tcx + off + cw/2.0, tcy + cur_d/2.0 + cd))
+            else: # vertical
+                if chair_count == 4:
+                    offsets = [-cur_d * 0.25, cur_d * 0.25]
+                elif chair_count == 6:
+                    offsets = [-cur_d * 0.33, 0.0, cur_d * 0.33]
+                else:
+                    offsets = [0.0]
+
+                for off in offsets:
+                    chairs.append(box(tcx - cur_w/2.0 - cd, tcy + off - cw/2.0, tcx - cur_w/2.0, tcy + off + cw/2.0))
+                    if chair_count > 2:
+                        chairs.append(box(tcx + cur_w/2.0, tcy + off - cw/2.0, tcx + cur_w/2.0 + cd, tcy + off + cw/2.0))
+
+            score = 100.0 - len(reasons) * 35.0
+            if foyer_keepout and not foyer_keepout.is_empty and t_box.intersects(foyer_keepout):
+                score -= 500.0
+            if protected_circ and not protected_circ.is_empty and t_box.intersects(protected_circ):
+                score -= 300.0
+            if kitchen_poly and not kitchen_poly.is_empty:
+                dist_k = t_box.distance(kitchen_poly)
+                if dist_k < 2.0:
+                    score += 15.0
+
+            cand_data = {
+                "archetype": archetype,
+                "score": max(0.0, min(100.0, score)),
+                "valid": len(reasons) == 0,
+                "reasons": reasons,
+                "table_box": t_box,
+                "pullout_box": pullout_box,
+                "walkway_box": walkway_box,
+                "chair_boxes": chairs,
+                "table_center": (tcx, tcy),
+                "orientation": orient,
+                "chair_count": len(chairs)
+            }
+            candidates.append(cand_data)
+
+    candidates.sort(key=lambda c: (c["valid"], c["score"]), reverse=True)
+    best_cand = candidates[0] if candidates else None
+    return best_cand
+
+
+# ==============================================================================
+# 6. GLOBAL FURNITURE LAYOUT COLLISION SOLVER
+# ==============================================================================
+
+def solve_global_furniture_layout(
+    room_groups: Dict[str, Dict[str, Any]],
+    protected_circ: Optional[Polygon] = None,
+    foyer_keepout: Optional[Polygon] = None,
+    wall_thickness: float = 0.15
+) -> Dict[str, Any]:
+    """
+    Executes a global cross-room furniture verification pass:
+    1. Collects all placed furniture pieces from all room groups.
+    2. Detects pairwise cross-room clashes (e.g. living sofa vs dining chairs).
+    3. Validates that no furniture chokes the primary circulation spine.
+    4. Validates that no furniture invades the front foyer arrival zone.
+    5. Returns unified collision report and global layout score.
+    """
+    items = []
+    for r_name, group in room_groups.items():
+        if not group or not isinstance(group, dict):
+            continue
+        # Living room group items
+        for k in ["tv_box", "sofa_box", "coffee_table_box", "rug_box"]:
+            b = group.get(k)
+            if b and not b.is_empty:
+                items.append({"room": r_name, "type": k.replace("_box", ""), "poly": b})
+        # Bedroom items
+        for k in ["headboard_box", "mattress_box", "wardrobe_box"]:
+            b = group.get(k)
+            if b and not b.is_empty:
+                items.append({"room": r_name, "type": k.replace("_box", ""), "poly": b})
+        if not group.get("mattress_box") and group.get("bed_box"):
+            items.append({"room": r_name, "type": "bed", "poly": group["bed_box"]})
+        for ns in group.get("nightstand_boxes", []):
+            if ns and not ns.is_empty:
+                items.append({"room": r_name, "type": "nightstand", "poly": ns})
+        # Dining items
+        if "table_box" in group and group["table_box"] and not group["table_box"].is_empty:
+            items.append({"room": r_name, "type": "dining_table", "poly": group["table_box"]})
+        for ch in group.get("chair_boxes", []):
+            if ch and not ch.is_empty:
+                items.append({"room": r_name, "type": "dining_chair", "poly": ch})
+        # Bathroom items
+        for k in ["vanity_box", "wc_box", "shower_box"]:
+            b = group.get(k)
+            if b and not b.is_empty:
+                items.append({"room": r_name, "type": k.replace("_box", ""), "poly": b})
+        # Kitchen items
+        for k in ["counter_box", "fridge_box", "sink_box", "cooktop_box"]:
+            b = group.get(k)
+            if b and not b.is_empty:
+                items.append({"room": r_name, "type": k.replace("_box", ""), "poly": b})
+
+    conflicts = []
+    # 1. Pairwise inter-group clashes (excluding pieces within the same group that legitimately touch like rug/sofa or bed/headboard)
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            it1, it2 = items[i], items[j]
+            p1, p2 = it1["poly"], it2["poly"]
+            # Allow items within same room of complementary types (bed/mattress, sofa/rug)
+            if it1["room"] == it2["room"]:
+                types = {it1["type"], it2["type"]}
+                if "bed" in types and ("headboard" in types or "mattress" in types):
+                    continue
+                if "headboard" in types and "mattress" in types:
+                    continue
+                if "rug" in types:
+                    continue
+                if "kitchen_counter" in types or "counter" in types:
+                    continue
+
+            if p1.intersects(p2):
+                inter = p1.intersection(p2)
+                if inter.area > 0.02:
+                    conflicts.append(
+                        f"Cross-object clash between {it1['room']}:{it1['type']} and {it2['room']}:{it2['type']} ({round(inter.area, 2)}m² overlap)"
+                    )
+
+    # 2. Circulation spine clash
+    if protected_circ and not protected_circ.is_empty:
+        for it in items:
+            if it["type"] in ["rug"]:  # Flat rugs may sit on circulation boundary
+                continue
+            if it["poly"].intersects(protected_circ):
+                inter = it["poly"].intersection(protected_circ)
+                if inter.area > 0.05:
+                    conflicts.append(f"{it['room']}:{it['type']} obstructs protected circulation corridor")
+
+    # 3. Foyer arrival keepout clash
+    if foyer_keepout and not foyer_keepout.is_empty:
+        for it in items:
+            if it["poly"].intersects(foyer_keepout):
+                inter = it["poly"].intersection(foyer_keepout)
+                if inter.area > 0.05:
+                    conflicts.append(f"{it['room']}:{it['type']} encroaches into front entrance foyer arrival zone")
+
+    score = max(0, 100 - len(conflicts) * 25)
+    return {
+        "valid": len(conflicts) == 0,
+        "score": score,
+        "conflicts": conflicts,
+        "placed_count": len(items),
+        "items": items
+    }
+

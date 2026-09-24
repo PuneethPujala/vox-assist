@@ -16,17 +16,29 @@ except ImportError:
         compute_protected_circulation_polygon = None
 
 try:
-    from furniture_grammars import solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones
+    from furniture_grammars import (
+        solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones,
+        solve_bedroom_furniture_group, solve_dining_zone_group, solve_global_furniture_layout
+    )
 except ImportError:
     try:
-        from engine.furniture_grammars import solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones
+        from engine.furniture_grammars import (
+            solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones,
+            solve_bedroom_furniture_group, solve_dining_zone_group, solve_global_furniture_layout
+        )
     except ImportError:
         try:
-            from backend.engine.furniture_grammars import solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones
+            from backend.engine.furniture_grammars import (
+                solve_living_room_group, solve_bathroom_fixtures, solve_kitchen_workzones,
+                solve_bedroom_furniture_group, solve_dining_zone_group, solve_global_furniture_layout
+            )
         except ImportError:
             solve_living_room_group = None
             solve_bathroom_fixtures = None
             solve_kitchen_workzones = None
+            solve_bedroom_furniture_group = None
+            solve_dining_zone_group = None
+            solve_global_furniture_layout = None
 
 # =========================
 # REALISTIC HOUSE CONFIG
@@ -653,179 +665,265 @@ def _place_room_furniture(all_faces, name, poly, door_polys=None, all_rooms=None
                         "room": name, "type": "dining_table", "poly": box(dx - dtw, dy - dth, dx + dtw, dy + dth), "height": 0.76
                     })
                 
-    elif "bedroom" in name or "bed" in name:
-        walls = {
-            "south": LineString([(minx, miny), (maxx, miny)]),
-            "north": LineString([(minx, maxy), (maxx, maxy)]),
-            "west":  LineString([(minx, miny), (minx, maxy)]),
-            "east":  LineString([(maxx, miny), (maxx, maxy)]),
-        }
-        
-        # Check doors, windows, and interior drywall for each wall
-        wall_has_door = {}
-        wall_has_window = {}
-        wall_is_interior = {}
-        
-        for w_side, w_line in walls.items():
-            wall_has_door[w_side] = any(dp.intersects(w_line.buffer(0.30)) for dp in door_polys)
-            wall_has_window[w_side] = any(
-                w_line.buffer(0.05).contains(win["wall_segment"])
-                for win in room_windows
-            )
-            is_int = False
-            if wall_graph:
-                for (p1, p2), sharing in wall_graph.items():
-                    inter = LineString([p1, p2]).intersection(w_line.buffer(0.05))
-                    if inter.length > 0.5 and len(sharing) > 1:
-                        is_int = True
+    elif "dining" in name.lower():
+        dining_sol = None
+        if solve_dining_zone_group is not None:
+            k_poly = None
+            if all_rooms:
+                for r_k, r_p in all_rooms.items():
+                    if "kitchen" in r_k.lower():
+                        k_poly = r_p
                         break
-            wall_is_interior[w_side] = is_int
+            dining_sol = solve_dining_zone_group(
+                dining_poly=poly,
+                kitchen_poly=k_poly,
+                door_polys=door_polys,
+                openings=openings,
+                protected_circ=protected_circ_poly,
+                foyer_keepout=foyer_keepout if 'foyer_keepout' in locals() else None,
+                scale=scale
+            )
+        if dining_sol:
+            tb = dining_sol["table_box"].bounds
+            add_box_to_faces(all_faces, tb[0], tb[2], tb[1], tb[3], FLOOR_THICKNESS + 0.72 * scale, FLOOR_THICKNESS + 0.76 * scale, "#8D6E63")
+            for lx in [tb[0] + 0.05*scale, tb[2] - 0.05*scale]:
+                for ly in [tb[1] + 0.05*scale, tb[3] - 0.05*scale]:
+                    add_box_to_faces(all_faces, lx - 0.02*scale, lx + 0.02*scale, ly - 0.02*scale, ly + 0.02*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.72*scale, "#5D4037")
+            for cb in dining_sol.get("chair_boxes", []):
+                chb = cb.bounds
+                add_box_to_faces(all_faces, chb[0], chb[2], chb[1], chb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42*scale, "#475569")
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({
+                    "room": name, "type": "dining_table", "poly": dining_sol["table_box"], "height": 0.76
+                })
 
-        # 1. Select Headboard Focal Wall (Solid Wall, no doors, no windows)
-        head_scores = {}
-        for w_side, w_line in walls.items():
-            score = 0.0
-            if wall_has_door[w_side]: score -= 150.0
-            if wall_has_window[w_side]: score -= 60.0
-            if wall_is_interior[w_side]: score += 50.0
-            score += w_line.length * 1.5
-            head_scores[w_side] = score
-            
-        best_head_wall = max(head_scores.items(), key=lambda x: x[1])[0]
-        
-        bw, bh = 0.8 * scale, 0.95 * scale
-        
-        # Orient bed according to headboard wall
-        if best_head_wall == "north":
-            bed_cx = cx
-            head_y1 = maxy - 0.18 * scale
-            head_y2 = maxy - 0.06
-            mat_y1 = maxy - 0.18 * scale - 1.7 * scale
-            mat_y2 = maxy - 0.18 * scale
-            pil_y1 = maxy - 0.52 * scale
-            pil_y2 = maxy - 0.22 * scale
-            night_y1 = maxy - 0.48 * scale
-            night_y2 = maxy - 0.10
-            add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, head_y1, head_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
-            add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, mat_y1, mat_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
-            add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
-                if minx + 0.05 <= side_x and side_x + 0.3*scale <= maxx - 0.05:
-                    add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, night_y1, night_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
-                    add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, (night_y1 + night_y2)/2 - 0.05*scale, (night_y1 + night_y2)/2 + 0.05*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
-            bed_box = box(bed_cx - bw, mat_y1, bed_cx + bw, head_y2)
-        elif best_head_wall == "south":
-            bed_cx = cx
-            head_y1 = miny + 0.06
-            head_y2 = miny + 0.18 * scale
-            mat_y1 = miny + 0.18 * scale
-            mat_y2 = miny + 0.18 * scale + 1.7 * scale
-            pil_y1 = miny + 0.22 * scale
-            pil_y2 = miny + 0.52 * scale
-            night_y1 = miny + 0.10
-            night_y2 = miny + 0.48 * scale
-            add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, head_y1, head_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
-            add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, mat_y1, mat_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
-            add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
-                if minx + 0.05 <= side_x and side_x + 0.3*scale <= maxx - 0.05:
-                    add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, night_y1, night_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
-                    add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, (night_y1 + night_y2)/2 - 0.05*scale, (night_y1 + night_y2)/2 + 0.05*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
-            bed_box = box(bed_cx - bw, head_y1, bed_cx + bw, mat_y2)
-        elif best_head_wall == "west":
-            bed_cy = cy
-            head_x1 = minx + 0.06
-            head_x2 = minx + 0.18 * scale
-            mat_x1 = minx + 0.18 * scale
-            mat_x2 = minx + 0.18 * scale + 1.7 * scale
-            pil_x1 = minx + 0.22 * scale
-            pil_x2 = minx + 0.52 * scale
-            night_x1 = minx + 0.10
-            night_x2 = minx + 0.48 * scale
-            add_box_to_faces(all_faces, head_x1, head_x2, bed_cy - bw - 0.05*scale, bed_cy + bw + 0.05*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
-            add_box_to_faces(all_faces, mat_x1, mat_x2, bed_cy - bw, bed_cy + bw, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
-            add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy - 0.65*scale, bed_cy - 0.1*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy + 0.1*scale, bed_cy + 0.65*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            for side_y in [bed_cy - bw - 0.35*scale, bed_cy + bw + 0.05*scale]:
-                if miny + 0.05 <= side_y and side_y + 0.3*scale <= maxy - 0.05:
-                    add_box_to_faces(all_faces, night_x1, night_x2, side_y, side_y + 0.3*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
-                    add_box_to_faces(all_faces, (night_x1 + night_x2)/2 - 0.05*scale, (night_x1 + night_x2)/2 + 0.05*scale, side_y + 0.1*scale, side_y + 0.2*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
-            bed_box = box(head_x1, bed_cy - bw, mat_x2, bed_cy + bw)
-        else: # east
-            bed_cy = cy
-            head_x1 = maxx - 0.18 * scale
-            head_x2 = maxx - 0.06
-            mat_x1 = maxx - 0.18 * scale - 1.7 * scale
-            mat_x2 = maxx - 0.18 * scale
-            pil_x1 = maxx - 0.52 * scale
-            pil_x2 = maxx - 0.22 * scale
-            night_x1 = maxx - 0.48 * scale
-            night_x2 = maxx - 0.10
-            add_box_to_faces(all_faces, head_x1, head_x2, bed_cy - bw - 0.05*scale, bed_cy + bw + 0.05*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
-            add_box_to_faces(all_faces, mat_x1, mat_x2, bed_cy - bw, bed_cy + bw, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
-            add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy - 0.65*scale, bed_cy - 0.1*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy + 0.1*scale, bed_cy + 0.65*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
-            for side_y in [bed_cy - bw - 0.35*scale, bed_cy + bw + 0.05*scale]:
-                if miny + 0.05 <= side_y and side_y + 0.3*scale <= maxy - 0.05:
-                    add_box_to_faces(all_faces, night_x1, night_x2, side_y, side_y + 0.3*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
-                    add_box_to_faces(all_faces, (night_x1 + night_x2)/2 - 0.05*scale, (night_x1 + night_x2)/2 + 0.05*scale, side_y + 0.1*scale, side_y + 0.2*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
-            bed_box = box(mat_x1, bed_cy - bw, head_x2, bed_cy + bw)
+    elif "bedroom" in name or "bed" in name:
+        bed_sol = None
+        if solve_bedroom_furniture_group is not None:
+            bed_sol = solve_bedroom_furniture_group(
+                room_poly=poly,
+                room_name=name,
+                door_polys=door_polys,
+                windows=room_windows,
+                window_exclusion_polys=window_exclusion_polys,
+                wall_graph=wall_graph,
+                scale=scale
+            )
 
-        if placed_furniture_out is not None:
-            placed_furniture_out.append({"room": name, "type": "bed", "poly": bed_box, "height": 1.0})
+        if bed_sol and bed_sol.get("headboard_box") and bed_sol.get("mattress_box"):
+            h_box = bed_sol["headboard_box"]
+            m_box = bed_sol["mattress_box"]
+            h_wall = bed_sol["headboard_wall"]
+            hb = h_box.bounds
+            mb = m_box.bounds
 
-        # 2. Select Wardrobe Wall (Solid Interior Wall, NEVER an Exterior Window Wall!)
-        wardrobe_scores = {}
-        for w_side in [w_key for w_key in walls.keys() if w_key != best_head_wall]:
-            w_line = walls[w_side]
-            has_w = wall_has_window[w_side]
-            has_d = wall_has_door[w_side]
-            is_int = wall_is_interior[w_side]
-            
-            if has_w:
-                score = -9999.0 # STRICTLY DISQUALIFIED
-            elif has_d:
-                score = -100.0
+            # 1. Headboard
+            add_box_to_faces(all_faces, hb[0], hb[2], hb[1], hb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.05 * scale, "#D7CCC8")
+            # 2. Mattress
+            add_box_to_faces(all_faces, mb[0], mb[2], mb[1], mb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.50 * scale, "#FFFFFF")
+
+            # 3. Pillows
+            if h_wall in ["north", "south"]:
+                pw = (mb[2] - mb[0]) * 0.35
+                pil_y1 = mb[3] - 0.35 * scale if h_wall == "north" else mb[1] + 0.05 * scale
+                pil_y2 = pil_y1 + 0.30 * scale
+                add_box_to_faces(all_faces, mb[0] + 0.08*scale, mb[0] + 0.08*scale + pw, pil_y1, pil_y2, FLOOR_THICKNESS + 0.50*scale, FLOOR_THICKNESS + 0.57*scale, "#E2E8F0")
+                add_box_to_faces(all_faces, mb[2] - 0.08*scale - pw, mb[2] - 0.08*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.50*scale, FLOOR_THICKNESS + 0.57*scale, "#E2E8F0")
             else:
-                score = 50.0
-                if is_int: score += 50.0
-            wardrobe_scores[w_side] = score
-            
-        best_wardrobe_wall = max(wardrobe_scores.items(), key=lambda x: x[1])[0]
-        if wardrobe_scores[best_wardrobe_wall] > -5000.0:
-            # Build wardrobe on best_wardrobe_wall
-            w_depth = 0.58
-            w_len = min(1.6 * scale, max(1.1, 0.42 * (w if best_wardrobe_wall in ["north", "south"] else h)))
-            
-            if best_wardrobe_wall == "west":
-                wx1, wx2 = minx + 0.05, minx + 0.05 + w_depth
-                wy1, wy2 = cy - w_len/2.0, cy + w_len/2.0
-            elif best_wardrobe_wall == "east":
-                wx1, wx2 = maxx - 0.05 - w_depth, maxx - 0.05
-                wy1, wy2 = cy - w_len/2.0, cy + w_len/2.0
-            elif best_wardrobe_wall == "north":
-                wx1, wx2 = cx - w_len/2.0, cx + w_len/2.0
-                wy1, wy2 = maxy - 0.05 - w_depth, maxy - 0.05
-            else: # south
-                wx1, wx2 = cx - w_len/2.0, cx + w_len/2.0
-                wy1, wy2 = miny + 0.05, miny + 0.05 + w_depth
+                ph = (mb[3] - mb[1]) * 0.35
+                pil_x1 = mb[2] - 0.35 * scale if h_wall == "east" else mb[0] + 0.05 * scale
+                pil_x2 = pil_x1 + 0.30 * scale
+                add_box_to_faces(all_faces, pil_x1, pil_x2, mb[1] + 0.08*scale, mb[1] + 0.08*scale + ph, FLOOR_THICKNESS + 0.50*scale, FLOOR_THICKNESS + 0.57*scale, "#E2E8F0")
+                add_box_to_faces(all_faces, pil_x1, pil_x2, mb[3] - 0.08*scale - ph, mb[3] - 0.08*scale, FLOOR_THICKNESS + 0.50*scale, FLOOR_THICKNESS + 0.57*scale, "#E2E8F0")
 
-            w_box = box(wx1, wy1, wx2, wy2)
-            # Verify no collision with window keepout, door swing, or bed
-            overlaps_win = any(w_box.intersects(kp) for kp in window_exclusion_polys)
-            overlaps_door = any(w_box.intersects(dp.buffer(0.25)) for dp in door_polys)
-            overlaps_bed = w_box.intersects(bed_box.buffer(0.20))
-            
-            if not overlaps_win and not overlaps_door and not overlaps_bed:
-                add_box_to_faces(all_faces, wx1, wx2, wy1, wy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 2.15 * scale, "#5D4037")
-                hx = (wx1 + wx2) / 2.0
-                hy = (wy1 + wy2) / 2.0
-                add_box_to_faces(all_faces, hx - 0.02, hx + 0.02, hy - 0.02, hy + 0.02, FLOOR_THICKNESS + 0.95*scale, FLOOR_THICKNESS + 1.20*scale, "#CBD5E1")
+            # 4. Nightstands
+            for ns in bed_sol.get("nightstand_boxes", []):
+                nsb = ns.bounds
+                add_box_to_faces(all_faces, nsb[0], nsb[2], nsb[1], nsb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.45 * scale, "#5D4037")
+                add_box_to_faces(all_faces, (nsb[0]+nsb[2])/2 - 0.05*scale, (nsb[0]+nsb[2])/2 + 0.05*scale, (nsb[1]+nsb[3])/2 - 0.05*scale, (nsb[1]+nsb[3])/2 + 0.05*scale, FLOOR_THICKNESS + 0.45*scale, FLOOR_THICKNESS + 0.68*scale, "#FDE047")
                 if placed_furniture_out is not None:
-                    placed_furniture_out.append({"room": name, "type": "wardrobe", "poly": w_box, "height": 2.15})
-        
+                    placed_furniture_out.append({"room": name, "type": "nightstand", "poly": ns, "height": 0.45})
+
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({"room": name, "type": "bed", "poly": bed_sol["bed_box"], "height": 1.05})
+
+            # 5. Wardrobe
+            if bed_sol.get("wardrobe_box"):
+                wb = bed_sol["wardrobe_box"].bounds
+                add_box_to_faces(all_faces, wb[0], wb[2], wb[1], wb[3], FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 2.10 * scale, "#5D4037")
+                add_box_to_faces(all_faces, (wb[0]+wb[2])/2 - 0.02, (wb[0]+wb[2])/2 + 0.02, (wb[1]+wb[3])/2 - 0.02, (wb[1]+wb[3])/2 + 0.02, FLOOR_THICKNESS + 0.95*scale, FLOOR_THICKNESS + 1.20*scale, "#CBD5E1")
+                if placed_furniture_out is not None:
+                    placed_furniture_out.append({"room": name, "type": "wardrobe", "poly": bed_sol["wardrobe_box"], "height": 2.10})
+        else:
+            walls = {
+                "south": LineString([(minx, miny), (maxx, miny)]),
+                "north": LineString([(minx, maxy), (maxx, maxy)]),
+                "west":  LineString([(minx, miny), (minx, maxy)]),
+                "east":  LineString([(maxx, miny), (maxx, maxy)]),
+            }
+            
+            # Check doors, windows, and interior drywall for each wall
+            wall_has_door = {}
+            wall_has_window = {}
+            wall_is_interior = {}
+            
+            for w_side, w_line in walls.items():
+                wall_has_door[w_side] = any(dp.intersects(w_line.buffer(0.30)) for dp in door_polys)
+                wall_has_window[w_side] = any(
+                    w_line.buffer(0.05).contains(win["wall_segment"])
+                    for win in room_windows
+                )
+                is_int = False
+                if wall_graph:
+                    for (p1, p2), sharing in wall_graph.items():
+                        inter = LineString([p1, p2]).intersection(w_line.buffer(0.05))
+                        if inter.length > 0.5 and len(sharing) > 1:
+                            is_int = True
+                            break
+                wall_is_interior[w_side] = is_int
+
+            # 1. Select Headboard Focal Wall (Solid Wall, no doors, no windows)
+            head_scores = {}
+            for w_side, w_line in walls.items():
+                score = 0.0
+                if wall_has_door[w_side]: score -= 150.0
+                if wall_has_window[w_side]: score -= 60.0
+                if wall_is_interior[w_side]: score += 50.0
+                score += w_line.length * 1.5
+                head_scores[w_side] = score
+                
+            best_head_wall = max(head_scores.items(), key=lambda x: x[1])[0]
+            bw, bh = 0.8 * scale, 0.95 * scale
+            
+            # Orient bed according to headboard wall
+            if best_head_wall == "north":
+                bed_cx = cx
+                head_y1 = maxy - 0.18 * scale
+                head_y2 = maxy - 0.06
+                mat_y1 = maxy - 0.18 * scale - 1.7 * scale
+                mat_y2 = maxy - 0.18 * scale
+                pil_y1 = maxy - 0.52 * scale
+                pil_y2 = maxy - 0.22 * scale
+                night_y1 = maxy - 0.48 * scale
+                night_y2 = maxy - 0.10
+                add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, head_y1, head_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
+                add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, mat_y1, mat_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
+                add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
+                    if minx + 0.05 <= side_x and side_x + 0.3*scale <= maxx - 0.05:
+                        add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, night_y1, night_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
+                        add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, (night_y1 + night_y2)/2 - 0.05*scale, (night_y1 + night_y2)/2 + 0.05*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
+                bed_box = box(bed_cx - bw, mat_y1, bed_cx + bw, head_y2)
+            elif best_head_wall == "south":
+                bed_cx = cx
+                head_y1 = miny + 0.06
+                head_y2 = miny + 0.18 * scale
+                mat_y1 = miny + 0.18 * scale
+                mat_y2 = miny + 0.18 * scale + 1.7 * scale
+                pil_y1 = miny + 0.22 * scale
+                pil_y2 = miny + 0.52 * scale
+                night_y1 = miny + 0.10
+                night_y2 = miny + 0.48 * scale
+                add_box_to_faces(all_faces, bed_cx - bw - 0.05*scale, bed_cx + bw + 0.05*scale, head_y1, head_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
+                add_box_to_faces(all_faces, bed_cx - bw, bed_cx + bw, mat_y1, mat_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
+                add_box_to_faces(all_faces, bed_cx - 0.65*scale, bed_cx - 0.1*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                add_box_to_faces(all_faces, bed_cx + 0.1*scale, bed_cx + 0.65*scale, pil_y1, pil_y2, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                for side_x in [bed_cx - bw - 0.35*scale, bed_cx + bw + 0.05*scale]:
+                    if minx + 0.05 <= side_x and side_x + 0.3*scale <= maxx - 0.05:
+                        add_box_to_faces(all_faces, side_x, side_x + 0.3*scale, night_y1, night_y2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
+                        add_box_to_faces(all_faces, side_x + 0.1*scale, side_x + 0.2*scale, (night_y1 + night_y2)/2 - 0.05*scale, (night_y1 + night_y2)/2 + 0.05*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
+                bed_box = box(bed_cx - bw, head_y1, bed_cx + bw, mat_y2)
+            elif best_head_wall == "west":
+                bed_cy = cy
+                head_x1 = minx + 0.06
+                head_x2 = minx + 0.18 * scale
+                mat_x1 = minx + 0.18 * scale
+                mat_x2 = minx + 0.18 * scale + 1.7 * scale
+                pil_x1 = minx + 0.22 * scale
+                pil_x2 = minx + 0.52 * scale
+                night_x1 = minx + 0.10
+                night_x2 = minx + 0.48 * scale
+                add_box_to_faces(all_faces, head_x1, head_x2, bed_cy - bw - 0.05*scale, bed_cy + bw + 0.05*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
+                add_box_to_faces(all_faces, mat_x1, mat_x2, bed_cy - bw, bed_cy + bw, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
+                add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy - 0.65*scale, bed_cy - 0.1*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy + 0.1*scale, bed_cy + 0.65*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                for side_y in [bed_cy - bw - 0.35*scale, bed_cy + bw + 0.05*scale]:
+                    if miny + 0.05 <= side_y and side_y + 0.3*scale <= maxy - 0.05:
+                        add_box_to_faces(all_faces, night_x1, night_x2, side_y, side_y + 0.3*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
+                        add_box_to_faces(all_faces, (night_x1 + night_x2)/2 - 0.05*scale, (night_x1 + night_x2)/2 + 0.05*scale, side_y + 0.1*scale, side_y + 0.2*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
+                bed_box = box(head_x1, bed_cy - bw, mat_x2, bed_cy + bw)
+            else: # east
+                bed_cy = cy
+                head_x1 = maxx - 0.18 * scale
+                head_x2 = maxx - 0.06
+                mat_x1 = maxx - 0.18 * scale - 1.7 * scale
+                mat_x2 = maxx - 0.18 * scale
+                pil_x1 = maxx - 0.52 * scale
+                pil_x2 = maxx - 0.22 * scale
+                night_x1 = maxx - 0.48 * scale
+                night_x2 = maxx - 0.10
+                add_box_to_faces(all_faces, head_x1, head_x2, bed_cy - bw - 0.05*scale, bed_cy + bw + 0.05*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 1.0 * scale, "#D7CCC8")
+                add_box_to_faces(all_faces, mat_x1, mat_x2, bed_cy - bw, bed_cy + bw, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.48 * scale, "#FFFFFF")
+                add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy - 0.65*scale, bed_cy - 0.1*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                add_box_to_faces(all_faces, pil_x1, pil_x2, bed_cy + 0.1*scale, bed_cy + 0.65*scale, FLOOR_THICKNESS + 0.48*scale, FLOOR_THICKNESS + 0.55*scale, "#E2E8F0")
+                for side_y in [bed_cy - bw - 0.35*scale, bed_cy + bw + 0.05*scale]:
+                    if miny + 0.05 <= side_y and side_y + 0.3*scale <= maxy - 0.05:
+                        add_box_to_faces(all_faces, night_x1, night_x2, side_y, side_y + 0.3*scale, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 0.42 * scale, "#5D4037")
+                        add_box_to_faces(all_faces, (night_x1 + night_x2)/2 - 0.05*scale, (night_x1 + night_x2)/2 + 0.05*scale, side_y + 0.1*scale, side_y + 0.2*scale, FLOOR_THICKNESS + 0.42*scale, FLOOR_THICKNESS + 0.65*scale, "#FDE047")
+                bed_box = box(mat_x1, bed_cy - bw, head_x2, bed_cy + bw)
+
+            if placed_furniture_out is not None:
+                placed_furniture_out.append({"room": name, "type": "bed", "poly": bed_box, "height": 1.0})
+
+            # 2. Select Wardrobe Wall (Solid Interior Wall, NEVER an Exterior Window Wall!)
+            wardrobe_scores = {}
+            for w_side in [w_key for w_key in walls.keys() if w_key != best_head_wall]:
+                w_line = walls[w_side]
+                has_w = wall_has_window[w_side]
+                has_d = wall_has_door[w_side]
+                is_int = wall_is_interior[w_side]
+                
+                if has_w:
+                    score = -9999.0 # STRICTLY DISQUALIFIED
+                elif has_d:
+                    score = -100.0
+                else:
+                    score = 50.0
+                    if is_int: score += 50.0
+                wardrobe_scores[w_side] = score
+                
+            best_wardrobe_wall = max(wardrobe_scores.items(), key=lambda x: x[1])[0]
+            if wardrobe_scores[best_wardrobe_wall] > -5000.0:
+                w_depth = 0.58
+                w_len = min(1.6 * scale, max(1.1, 0.42 * (w if best_wardrobe_wall in ["north", "south"] else h)))
+                
+                if best_wardrobe_wall == "west":
+                    wx1, wx2 = minx + 0.05, minx + 0.05 + w_depth
+                    wy1, wy2 = cy - w_len/2.0, cy + w_len/2.0
+                elif best_wardrobe_wall == "east":
+                    wx1, wx2 = maxx - 0.05 - w_depth, maxx - 0.05
+                    wy1, wy2 = cy - w_len/2.0, cy + w_len/2.0
+                elif best_wardrobe_wall == "north":
+                    wx1, wx2 = cx - w_len/2.0, cx + w_len/2.0
+                    wy1, wy2 = maxy - 0.05 - w_depth, maxy - 0.05
+                else: # south
+                    wx1, wx2 = cx - w_len/2.0, cx + w_len/2.0
+                    wy1, wy2 = miny + 0.05, miny + 0.05 + w_depth
+
+                w_box = box(wx1, wy1, wx2, wy2)
+                overlaps_win = any(w_box.intersects(kp) for kp in window_exclusion_polys)
+                overlaps_door = any(w_box.intersects(dp.buffer(0.25)) for dp in door_polys)
+                overlaps_bed = w_box.intersects(bed_box.buffer(0.20))
+                
+                if not overlaps_win and not overlaps_door and not overlaps_bed:
+                    add_box_to_faces(all_faces, wx1, wx2, wy1, wy2, FLOOR_THICKNESS + 0.01, FLOOR_THICKNESS + 2.15 * scale, "#5D4037")
+                    hx = (wx1 + wx2) / 2.0
+                    hy = (wy1 + wy2) / 2.0
+                    add_box_to_faces(all_faces, hx - 0.02, hx + 0.02, hy - 0.02, hy + 0.02, FLOOR_THICKNESS + 0.95*scale, FLOOR_THICKNESS + 1.20*scale, "#CBD5E1")
+                    if placed_furniture_out is not None:
+                        placed_furniture_out.append({"room": name, "type": "wardrobe", "poly": w_box, "height": 2.15})
+
     elif "bathroom" in name or "bath" in name or "toilet" in name:
         bath_sol = None
         if solve_bathroom_fixtures is not None:
@@ -1187,6 +1285,27 @@ def build_house_from_layout(layout, visualize=True, output_file="house_3d_cad.pl
         )
 
     layout["furniture"] = placed_furniture
+
+    # Global cross-room furniture verification
+    if solve_global_furniture_layout is not None and placed_furniture:
+        try:
+            room_groups_map = {}
+            for item in placed_furniture:
+                r_name = item.get("room", "general")
+                if r_name not in room_groups_map:
+                    room_groups_map[r_name] = {}
+                f_type = item.get("type", "furniture")
+                poly = item.get("poly")
+                if poly:
+                    room_groups_map[r_name][f"{f_type}_box"] = poly
+            global_res = solve_global_furniture_layout(
+                room_groups_map,
+                protected_circ=protected_circ,
+                foyer_keepout=foyer_keepout if 'foyer_keepout' in locals() else None
+            )
+            layout["furniture_global_check"] = global_res
+        except Exception as e:
+            print(f"⚠️ Global furniture layout verification: {e}")
 
     # Add Foyer Mat / Welcome Tile Inlay directly inside Entrance Door
     if entrance_geom and not entrance_geom.is_empty:
